@@ -1,3 +1,4 @@
 model/
 **/__pycache__/
 code/pretrained_ckpt/vmamba_tiny_e292.pth
+code/pretrained_ckpt/swin_tiny_patch4_window7_224.pth

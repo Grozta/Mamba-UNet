@@ -44,7 +44,7 @@ parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
 parser.add_argument('--patch_size', type=list,  default=[224, 224],
                     help='patch size of network input')
-parser.add_argument('--seed', type=int,  default=1337, help='random seed')
+parser.add_argument('--seed', type=int,  default=5179, help='random seed')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument(
@@ -150,9 +150,9 @@ def train(args, snapshot_path):
     #             param.detach_()
     #     return model
 
-    model2 = ViM_seg(config, img_size=args.patch_size,
+    model1 = ViM_seg(config, img_size=args.patch_size,
                      num_classes=args.num_classes).cuda()
-    model2.load_from(config)
+    model1.load_from(config)
 
     model2 = ViM_seg(config, img_size=args.patch_size,
                      num_classes=args.num_classes).cuda()

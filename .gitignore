@@ -1,2 +1,3 @@
 model/
 **/__pycache__/
+code/pretrained_ckpt/vmamba_tiny_e292.pth

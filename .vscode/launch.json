@@ -49,6 +49,24 @@
             "cwd": "${workspaceFolder}/code",
             "args": ["--labelnum","13",],
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        }
+        },
+        {
+            "name": "10%ACDC_Semi-Mamba-UNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_Semi_Mamba_UNet.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path","/media/icml/H4T/DATASET/BTCV",
+                "--exp","ACDC/Semi_Mamba_UNet",
+                "--max_iterations","30000",
+                "--labeled_num","7",
+                "--batch_size","10",
+                "--labeled_bs","5",
+        ],// python train_Semi_Mamba_UNet.py --root_path ../data/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 3 --batch_size 16 --labeled_bs 8
+            "env": {"CUDA_VISIBLE_DEVICES":"0",}
+        },
     ]
 }

@@ -146,7 +146,7 @@ def train(train_list, test_list, fold_id=1):
     optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9, weight_decay=0.0001)
     # optimizer = optim.Adam(model.parameters(), lr=base_lr)
 
-    writer = SummaryWriter(snapshot_path_tmp)
+    writer = SummaryWriter(os.path.join(snapshot_path_tmp,"log"))
     logging.info("{} itertations per epoch".format(len(trainloader)))
 
     dice_loss = losses.DiceLoss(n_classes=num_classes)

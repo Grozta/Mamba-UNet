@@ -1,1 +1,2 @@
-mamba/csrc/selective_scan/selective_scan_bwd_fp32_complex.cu
+model/
+**/__pycache__/

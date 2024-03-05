@@ -16,7 +16,7 @@
                 "--labelnum","5",
                 "--batch_size","2",
                 "--labeled_bs","1",
-                "--root_path","/home/grozta/Desktop/DATASET/btcv_h5"
+                "--root_path","/media/icml/H4T/DATASET/btcv_h5"
         ],// python train_main_btcv.py --labelnum 5 --root_path /home/grozta/Desktop/DATASET/btcv_h5/ --labeled_bs 1 --batch_size 2
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
         },

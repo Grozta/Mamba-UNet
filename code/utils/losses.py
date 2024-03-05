@@ -16,9 +16,9 @@ def mse_loss(input1, input2):
     return torch.mean((input1 - input2)**2)
 
 
-class DiceLoss(nn.Module):
+class MagicDiceLoss(nn.Module):
     def __init__(self, n_classes):
-        super(DiceLoss, self).__init__()
+        super(MagicDiceLoss, self).__init__()
         self.n_classes = n_classes
 
     def _one_hot_encoder(self, input_tensor):

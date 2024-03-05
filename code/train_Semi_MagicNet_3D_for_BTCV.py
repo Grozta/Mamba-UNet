@@ -149,7 +149,7 @@ def train(train_list, test_list, fold_id=1):
     writer = SummaryWriter(os.path.join(snapshot_path_tmp,"log"))
     logging.info("{} itertations per epoch".format(len(trainloader)))
 
-    dice_loss = losses.DiceLoss(n_classes=num_classes)
+    dice_loss = losses.MagicDiceLoss(n_classes=num_classes)
 
     ema_model.train()
 

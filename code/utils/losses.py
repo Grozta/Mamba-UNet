@@ -510,7 +510,7 @@ class ConLoss(torch.nn.Module):
 
 #         return loss,queue
     
-    
+# there exist two 'contrastive_loss_sup', this is discard
 class contrastive_loss_sup(torch.nn.Module):
     def __init__(self, temperature=0.07, base_temperature=0.07):
         """
@@ -597,7 +597,7 @@ def info_nce_loss(feats1,feats2):
 #     self.log(mode+'_acc_mean_pos', 1+sim_argsort.float().mean())
 
     return nll
-
+# there exist two 'contrastive_loss_sup', this is used
 class contrastive_loss_sup(torch.nn.Module):
     def __init__(self, temperature=0.07, base_temperature=0.07):
         """

@@ -38,6 +38,30 @@ def get_loc_mask(volume_batch, cube_size=32):
     # loc_list: N=27 x [1, 1]
     return loc_list
 
+def get_loc_mask_2d(volume_batch, cube_size=32):
+
+    # features: 4, 1, 96, 96, 96
+    bs, c, w, h = volume_batch.shape
+
+    # sx: 3, sy: 3, sz: 3
+    sx = math.ceil((w - cube_size) / cube_size) + 1
+    sy = math.ceil((h - cube_size) / cube_size) + 1
+
+    loc_list = []
+    for x in range(1, sx + 1):
+        for y in range(1, sy + 1):
+            # 27 patches : 0 ~ 26
+            # l(x, y, z) = x + Wy +WHz
+            # e.g.: when x = 1, y = 1, z = 1, sx = sy = sz = 3
+            # loc_value = 0 + 3 * 0 + 3 * 3 * 0 = 13
+            # e.g.: when x = 3, y = 3, z = 3,
+            # loc_value = 2 + 3 * 2 + 3 * 3 * 2 = 26
+            loc_value = torch.tensor((x-1) + sx * (y-1) )
+            loc_list.append(loc_value.unsqueeze(0))
+
+    # loc_list: N=27 x [1, 1]
+    return loc_list
+
 
 def get_part_and_rec_ind(volume_shape, nb_cubes, nb_chnls):
     bs, c, w, h, d = volume_shape
@@ -57,6 +81,25 @@ def get_part_and_rec_ind(volume_shape, nb_cubes, nb_chnls):
     cube_rec_ind = cube_rec_ind.repeat_interleave(w // nb_cubes, dim=2)
     cube_rec_ind = cube_rec_ind.repeat_interleave(h // nb_cubes, dim=3)
     cube_rec_ind = cube_rec_ind.repeat_interleave(d // nb_cubes, dim=4)
+
+    return cube_part_ind, cube_rec_ind
+
+def get_part_and_rec_ind_2d(volume_shape, nb_cubes, nb_chnls):
+    bs, c, w, h = volume_shape
+
+    # partition
+    rand_loc_ind = torch.argsort(torch.rand(bs, nb_cubes, nb_cubes), dim=0).cuda()
+    cube_part_ind = rand_loc_ind.view(bs, 1, nb_cubes, nb_cubes)
+    cube_part_ind = cube_part_ind.repeat_interleave(c, dim=1)
+    cube_part_ind = cube_part_ind.repeat_interleave(w // nb_cubes, dim=2)
+    cube_part_ind = cube_part_ind.repeat_interleave(h // nb_cubes, dim=3)
+
+    # recovery
+    rec_ind = torch.argsort(rand_loc_ind, dim=0).cuda()
+    cube_rec_ind = rec_ind.view(bs, 1, nb_cubes, nb_cubes)
+    cube_rec_ind = cube_rec_ind.repeat_interleave(nb_chnls, dim=1)
+    cube_rec_ind = cube_rec_ind.repeat_interleave(w // nb_cubes, dim=2)
+    cube_rec_ind = cube_rec_ind.repeat_interleave(h // nb_cubes, dim=3)
 
     return cube_part_ind, cube_rec_ind
 

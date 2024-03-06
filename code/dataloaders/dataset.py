@@ -6,7 +6,7 @@ import numpy as np
 from glob import glob
 from torch.utils.data import Dataset
 import h5py
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 from torchvision import transforms
 import itertools
 from scipy import ndimage
@@ -162,6 +162,34 @@ class RandomCrop(object):
             return {'image': image, 'label': label, 'sdf': sdf}
         else:
             return {'image': image, 'label': label}
+        
+
+def random_crop_2D(image, label, output_size=(256, 256)):
+
+    # pad the sample if necessary
+    if label.shape[0] <= output_size[0] or label.shape[1] <= output_size[1] :
+        pw = max((output_size[0] - label.shape[0]) // 2 + 3, 0)
+        ph = max((output_size[1] - label.shape[1]) // 2 + 3, 0)
+        
+        image = np.pad(image, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+        label = np.pad(label, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+
+    (w, h) = image.shape
+    w1 = np.random.randint(0, w - output_size[0])
+    h1 = np.random.randint(0, h - output_size[1])
+
+    label = label[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+    image = image[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+    
+    return  image, label
+
+def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
+    random_scale = np.random.uniform(0.8, 1.2)
+    x, y = image.shape
+    image = zoom(image, random_scale, order=0)
+    label = zoom(label, random_scale, order=0)
+
+    return  image, label
 
 
 class ToTensor(object):
@@ -275,11 +303,33 @@ class RandomGenerator(object):
             image, label = random_rot_flip(image, label)
         elif random.random() > 0.5:
             image, label = random_rotate(image, label)
+
         x, y = image.shape
         image = zoom(image, (self.output_size[0] / x, self.output_size[1] / y), order=0)
         label = zoom(label, (self.output_size[0] / x, self.output_size[1] / y), order=0)
         image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
         label = torch.from_numpy(label.astype(np.uint8))
+        sample = {"image": image, "label": label}
+        return sample
+    
+
+class RandomGeneratorv2(object):
+    def __init__(self, output_size):
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, label = sample["image"], sample["label"]
+        if random.random() > 0.5:
+            image, label = random_rot_flip(image, label)
+        elif random.random() > 0.5:
+            image, label = random_rotate(image, label)
+        
+        image, label = random_scale_2D(image,label)
+
+        image, label = random_crop_2D(image,label,self.output_size)
+
+        image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
         return sample
 

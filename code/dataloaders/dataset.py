@@ -6,7 +6,7 @@ import numpy as np
 from glob import glob
 from torch.utils.data import Dataset
 import h5py
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 from torchvision import transforms
 import itertools
 from scipy import ndimage

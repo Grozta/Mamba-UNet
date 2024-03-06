@@ -29,7 +29,6 @@ import SimpleITK as sitk
 import torch
 from medpy import metric
 from scipy.ndimage import zoom
-from scipy.ndimage.interpolation import zoom
 
 from dataloaders import utils
 from dataloaders.dataset import BaseDataSets, RandomGenerator
@@ -37,7 +36,7 @@ from networks.net_factory import net_factory
 from networks.vision_transformer import SwinUnet as ViT_seg
 # from networks.vision_mamba import MambaUnet as VIM
 from utils import losses, metrics, ramps
-from val_2D_ViT import test_single_volume, test_single_volume_ds
+from val_2D import test_single_volume, test_single_volume_ds
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
@@ -200,7 +199,8 @@ def train(args, snapshot_path):
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
                     metric_i = test_single_volume(
-                        sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
+                        sampled_batch["image"], sampled_batch["label"], model, 
+                        classes=num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
                 for class_i in range(num_classes-1):

@@ -26,7 +26,7 @@ from dataloaders.dataset import (BaseDataSets, RandomGenerator,
 from networks.net_factory import net_factory
 from networks.vision_transformer import SwinUnet as ViT_seg
 from utils import losses, metrics, ramps
-from val_2D_ViT import test_single_volume
+from val_2D import test_single_volume
 
 import h5py
 import nibabel as nib
@@ -34,7 +34,7 @@ import SimpleITK as sitk
 import torch
 from medpy import metric
 from scipy.ndimage import zoom
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 from tqdm import tqdm
 
 # from networks.efficientunet import UNet

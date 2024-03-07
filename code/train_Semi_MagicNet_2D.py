@@ -20,6 +20,10 @@ from utils import losses, metrics, ramps, test_util, cube_losses, cube_utils
 from config import get_config
 from dataloaders.dataset import *
 from networks.magicnet_2D import VNet_Magic_2D
+from val_2D import test_single_volume_magic
+import multiprocessing
+
+
 
 
 parser = argparse.ArgumentParser()
@@ -28,7 +32,6 @@ parser.add_argument('--root_path', type=str, default='../ACDC', help='Name of Da
 parser.add_argument('--exp', type=str, default='MagicNet_2D', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
-parser.add_argument('--max_iterations', type=int, default=20000, help='maximum iteration to train')
 parser.add_argument('--labeled_num', type=int, default=7, help='labeled trained samples')
 parser.add_argument('--labeled_bs', type=int, default=12, help='batch_size of labeled data per gpu')
 parser.add_argument('--batch_size', type=int, default=24, help='batch_size per gpu')
@@ -44,9 +47,22 @@ parser.add_argument('--consistency_type', type=str, default="mse", help='consist
 parser.add_argument('--consistency', type=float, default=0.1, help='consistency')
 parser.add_argument('--consistency_rampup', type=float, default=200.0, help='consistency_rampup')
 parser.add_argument('--T_dist', type=float, default=1.0, help='Temperature for organ-class distribution')
+
+parser.add_argument('--resume', action='store_true',help='The default value is false, false means training is restart')
+parser.add_argument('--is_save_more_log', action='store_true',help='The default value is false, true means adding more logs during training')
+parser.add_argument('--save_log_interval',type=int, default=20, help='The iteration interval for log saving logs')
+parser.add_argument('--is_save_checkpoint',action='store_true',help='The default value is false, true means save checkpoint during training')
+parser.add_argument('--save_checkpoint_interval',type=int, default=400, help='The iteration interval for log saving logs')
+parser.add_argument('--max_iterations', type=int, default=20000, help='maximum iteration to train')
 args = parser.parse_args()
 #config = get_config(args)
+# 获取当前机器的核心数
 
+def get_current_num_workers(rate=1.2):
+    num_cpus = multiprocessing.cpu_count()
+    # 设置 DataLoader 的 num_workers 为当前机器核心数的一半
+    num_workers = int(max(num_cpus // rate, 1))  # 至少为1
+    return num_workers
 
 def get_current_consistency_weight(epoch):
     # Consistency ramp-up from https://arxiv.org/abs/1610.02242
@@ -80,12 +96,12 @@ def patients_to_slices(dataset, patiens_num):
         print("Error")
     return ref_dict[str(patiens_num)]
 
-def config_log(snapshot_path_tmp, typename):
+def config_log(snapshot_path, typename):
 
     formatter = logging.Formatter(fmt='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     logging.getLogger().setLevel(logging.INFO)
 
-    handler = logging.FileHandler(snapshot_path_tmp + "/log_{}.txt".format(typename), mode="w")
+    handler = logging.FileHandler(snapshot_path + "/log_{}.txt".format(typename), mode="w")
     handler.setFormatter(formatter)
     handler.setLevel(logging.INFO)
     logging.getLogger().addHandler(handler)
@@ -98,18 +114,30 @@ def config_log(snapshot_path_tmp, typename):
 
 
 def train(args, snapshot_path):
-    test_list=[]
-    snapshot_path_tmp = snapshot_path
+
+    logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
+                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    if not args.resume:
+        logging.info(str(args))
+    writer = SummaryWriter(os.path.join(snapshot_path,"log"))
+
+    latest_checkpoint_path = os.path.join(snapshot_path,'{}_latest_checkpoint.pth').format(args.model)
+    if not args.resume or not os.path.exists(latest_checkpoint_path):
+        args.resume = False
 
     model = create_model(n_classes=args.num_classes, 
                          cube_size=args.cube_size, patchsize=args.patch_size[0])
-    #model1.load_from(config)
     ema_model = create_model(n_classes=args.num_classes, 
                              cube_size=args.cube_size, patchsize=args.patch_size[0], ema=True)
-    #model1.load_from(config)
-    
-    def worker_init_fn(worker_id):
-        random.seed(args.seed + worker_id)
+    optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=0.0001)
+    dice_loss = losses.MagicDiceLoss_2D(n_classes=args.num_classes)
+
+    if args.resume:
+        latest_checkpoint = torch.load(latest_checkpoint_path)
+        model.load_state_dict(latest_checkpoint['model_state_dict'])
+        ema_model.load_state_dict(latest_checkpoint['model_state_dict'])
+        optimizer.load_state_dict(latest_checkpoint['optimizer_state_dict'])
 
     db_train = BaseDataSets(base_dir=args.root_path, split="train", num=None, 
                             transform=transforms.Compose([RandomGeneratorv2(args.patch_size)]))
@@ -123,30 +151,41 @@ def train(args, snapshot_path):
     unlabeled_idxs = list(range(labeled_slice, total_slices))
     batch_sampler = TwoStreamBatchSampler(labeled_idxs, unlabeled_idxs, 
                                           args.batch_size, args.batch_size - args.labeled_bs)
-
+    if args.resume:
+        for i in range(latest_checkpoint['iteration']):
+            batch_sampler.__iter__()
     trainloader = DataLoader(db_train, batch_sampler=batch_sampler,
-                             num_workers=8, pin_memory=True, worker_init_fn=worker_init_fn)
+                             num_workers=get_current_num_workers(), pin_memory=True)
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,
                            num_workers=1)
+    if not args.resume:
+        logging.info("{} itertations per epoch".format(len(trainloader)))
 
-    model.train()
-    ema_model.train()
-
-    optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=0.0001)
-
-    writer = SummaryWriter(os.path.join(snapshot_path_tmp,"log"))
-    logging.info("{} itertations per epoch".format(len(trainloader)))
-
-    dice_loss = losses.MagicDiceLoss_2D(n_classes=args.num_classes)
-
-    iter_num = 0
-    best_dice_avg = 0
-    metric_all_cases = None
     max_epoch = args.max_iterations // len(trainloader) + 1
     lr_ = args.base_lr
     iterator = tqdm(range(max_epoch), ncols=70)
+    if args.resume:
+        iterator.update(latest_checkpoint['epoch'])
+        iter_num = latest_checkpoint['iteration']
+        dist_logger = cube_utils.OrganClassLogger(
+            num_classes=args.num_classes,
+            class_dist=latest_checkpoint['dist_logger_class_dist'],
+            class_total_pixel_store=latest_checkpoint['dist_logger_class_total_pixel_store'])
+
+        best_performance =latest_checkpoint['best_performance']
+        performance = latest_checkpoint['performance']
+        logging.info("checkpoint has recovery.epoch_num:{},iter_num:{}".format(iterator.n,iter_num))
+    else:
+
+        iter_num = 0
+        best_performance = 0.0
+        performance = 0.0
+        dist_logger = cube_utils.OrganClassLogger(num_classes=args.num_classes)
+        logging.info("start.epoch_num:{},iter_num:{}".format(iterator.n,iter_num))
+    
     loc_list = None
-    dist_logger = cube_utils.OrganClassLogger(num_classes=args.num_classes)
+    model.train()
+    ema_model.train()
 
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
@@ -160,17 +199,10 @@ def train(args, snapshot_path):
 
             # Cross-image Partition-and-Recovery
             bs, c, w, h = volume_batch.shape
-            # cube_size: size of each small-cube
-            # cube_size = 24
-            # nb_cubes: (96, 96, 96) // (24, 24, 24) -> (4, 4, 4)
-            # nb_cubes = 4
             nb_cubes = h // args.cube_size
             cube_part_ind, cube_rec_ind = cube_utils.get_part_and_rec_ind_2d(volume_shape=volume_batch.shape,
                                                                           nb_cubes=nb_cubes,
                                                                           nb_chnls=16)
-
-            # volume_batch: 4, 1, 96, 96, 96
-            # img_cross: 4, 1, 96, 96, 96
             img_cross_mix = volume_batch.view(bs, c, w, h)
             img_cross_mix = torch.gather(img_cross_mix, dim=0, index=cube_part_ind)
             img_cross_mix = img_cross_mix.view(bs, c, w, h)
@@ -189,9 +221,7 @@ def train(args, snapshot_path):
                 unlab_pl_soft = F.softmax(ema_output, dim=1)
                 pred_value_teacher, pred_class_teacher = torch.max(unlab_pl_soft, dim=1)
 
-            # nt = 3, ts = 32
-            # loc_list: 27 x [1, 1] (x + Wy + WHz)
-            if iter_num == 0:
+            if iter_num == 0 or args.resume:
                 loc_list = cube_utils.get_loc_mask_2d(volume_batch, args.cube_size)
 
             # calculate some losses
@@ -293,90 +323,95 @@ def train(args, snapshot_path):
 
             iter_num = iter_num + 1
 
-            if iter_num % 20 == 0:
-                logging.info('iteration {}: loss: {:.3f}, '
-                             'cons_dist: {:.3f}, loss_weight: {:f}, '
-                             'loss_loc: {:.3f}'.format(iter_num,
-                                                       loss,
-                                                       consistency_loss,
-                                                       consistency_weight,
-                                                       0.1 * loc_loss))
-                # save checkpoint 
-                # save_mode_path = os.path.join(snapshot_path_tmp, 'latest.pth')
-                # torch.save(model.state_dict(), save_mode_path)
-                # writer.add_scalar('train_loss/Total_loss', loss, iter_num)
-                # logging.info("save model to {}".format(save_mode_path))
+            if iter_num % args.save_log_interval == 0:
+                logging.info('iteration {}: loss: {:.3f},cons_dist: {:.3f},loss_weight: {:f},loss_loc: {:.3f}'.
+                             format(iter_num, loss, consistency_loss, consistency_weight, 0.1 * loc_loss))
 
             lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr_
-            # if iter_num >= 2500 and iter_num % 2500 == 0:
-            if iter_num >= args.max_iterations:
+
+            if iter_num % args.save_log_interval == 0 and args.is_save_more_log:
+                image = volume_batch[1, 0:1, :, :]
+                writer.add_image('train/Image', image, iter_num)
+                outputs = torch.argmax(torch.softmax(
+                    outputs, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/model1_Prediction',
+                                    outputs[1, ...] * 50, iter_num)
+                labs = label_batch[1, ...].unsqueeze(0) * 50
+                writer.add_image('train/GroundTruth', labs, iter_num)
+
+                writer.add_scalar('consistency_weight/consistency_weight', consistency_weight, iter_num)
+                writer.add_scalar('lr', lr_, iter_num)
+                writer.add_scalar('loss/total_loss', loss.item(), iter_num)
+                writer.add_scalar('loss/supervised_loss', supervised_loss.item(), iter_num)
+                writer.add_scalar('loss/loc_loss', 0.1 * (loc_loss.item()), iter_num)
+                writer.add_scalar('loss/consistency_loss', consistency_loss.item(), iter_num)
+                writer.add_scalar('loss/consistency_weight',consistency_weight, iter_num)
+
+            if iter_num % args.save_checkpoint_interval == 0 and iter_num < args.max_iterations:
+                # per 400 iter, validate case and save checkpoint
                 model.eval()
-                dice_all, std_all, metric_all_cases = test_util.validation_all_case(model,
-                                                                                    num_classes=args.num_classes,
-                                                                                    base_dir=args.root_path,
-                                                                                    image_list=test_list,
-                                                                                    patch_size=args.patch_size,
-                                                                                    stride_xy=16,
-                                                                                    stride_z=16)
-                dice_avg = dice_all.mean()
+                metric_list = 0.0
+                for i_batch, sampled_batch in enumerate(valloader):
+                    metric_i = test_single_volume_magic(
+                        sampled_batch["image"], sampled_batch["label"], model, classes=args.num_classes, patch_size=args.patch_size)
+                    metric_list += np.array(metric_i)
+                
+                # save validation log
+                performance = np.mean(metric_list, axis=0)[0]
+                mean_hd95 = np.mean(metric_list, axis=0)[1]
+                logging.info('iter_num:{},model_val_mean_dice:{:.3f},model_val_mean_hd95: {:.3f}'.
+                             format(iter_num, performance, mean_hd95))
+                
+                if args.is_save_more_log: 
+                    writer.add_scalar('info/model_val_mean_dice',
+                                    performance, iter_num)
+                    writer.add_scalar('info/model_val_mean_hd95',
+                                    mean_hd95, iter_num)
+                    for class_i in range(args.num_classes-1):
+                        writer.add_scalar('info/model_val_{}_dice'.format(class_i+1),
+                                        metric_list[class_i, 0], iter_num)
+                        writer.add_scalar('info/model_val_{}_hd95'.format(class_i+1),
+                                        metric_list[class_i, 1], iter_num)
+                # save resume checkpoint 
+                latest_checkpoint = {
+                'epoch': epoch_num,
+                'iteration': iter_num,
+                'best_performance' :best_performance,
+                'performance':performance,
+                'dist_logger_class_dist': dist_logger.class_dist,
+                'dist_logger_class_total_pixel_store':dist_logger.class_total_pixel_store,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                }
+                
+                torch.save(latest_checkpoint, latest_checkpoint_path)
+                logging.info("save model to {}".format(latest_checkpoint_path))
 
-                logging.info('iteration {}, '
-                             'average DSC: {:.3f}, '
-                             'spleen: {:.3f}, '
-                             'r.kidney: {:.3f}, '
-                             'l.kidney: {:.3f}, '
-                             'gallbladder: {:.3f}, '
-                             'esophagus: {:.3f}, '
-                             'liver: {:.3f}, '
-                             'stomach: {:.3f}, '
-                             'aorta: {:.3f}, '
-                             'inferior vena cava: {:.3f}'
-                             'portal vein and splenic vein: {:.3f}, '
-                             'pancreas: {:.3f}, '
-                             'right adrenal gland: {:.3f}, '
-                             'left adrenal gland: {:.3f}'
-                             .format(iter_num,
-                                     dice_avg,
-                                     dice_all[0],
-                                     dice_all[1],
-                                     dice_all[2],
-                                     dice_all[3],
-                                     dice_all[4],
-                                     dice_all[5],
-                                     dice_all[6],
-                                     dice_all[7],
-                                     dice_all[8],
-                                     dice_all[9],
-                                     dice_all[10],
-                                     dice_all[11],
-                                     dice_all[12]))
+            if performance > best_performance:
+                best_performance = performance
+                save_best = os.path.join(snapshot_path,
+                                            '{}_best_model.pth'.format(args.model))
+                torch.save(model.state_dict(), save_best)
+                logging.info("save model to {}".format(save_best))
 
-                # if dice_avg > best_dice_avg:
-                #     best_dice_avg = dice_avg
-                #     save_mode_path = os.path.join(snapshot_path_tmp, 'iter_{}_dice_{}.pth'.format(iter_num, best_dice_avg))
-                #     save_best_path = os.path.join(snapshot_path_tmp, '{}_best_model.pth'.format(args.model))
-                #     torch.save(model.state_dict(), save_mode_path)
-                #     torch.save(model.state_dict(), save_best_path)
-                #     logging.info("save best model to {}".format(save_mode_path))
-                # writer.add_scalar('Var_dice/Dice', dice_avg, iter_num)
-                # writer.add_scalar('Var_dice/Best_dice', best_dice_avg, iter_num)
-                model.train()
-
-            if iter_num >= args.max_iterations:
-                save_mode_path = os.path.join(snapshot_path_tmp, 'iter_' + str(iter_num) + '.pth')
+            if iter_num % 4000 == 0 or iter_num >= args.max_iterations:
+                save_mode_path = os.path.join(snapshot_path,
+                                                  'model_iter_{}_dice_{}.pth'.format(
+                                                      iter_num, round(best_performance, 4)))
                 torch.save(model.state_dict(), save_mode_path)
                 logging.info("save model to {}".format(save_mode_path))
+
+            model.train()
+
+            if iter_num >= args.max_iterations:
                 break
+            model.train()
         if iter_num >= args.max_iterations:
             iterator.close()
             break
     writer.close()
-    logging.getLogger().removeHandler(handler)
-    logging.getLogger().removeHandler(sh)
-
-    return metric_all_cases
 
 
 if __name__ == "__main__":
@@ -386,6 +421,7 @@ if __name__ == "__main__":
     else:
         cudnn.benchmark = False
         cudnn.deterministic = True
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -398,51 +434,6 @@ if __name__ == "__main__":
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):
         shutil.rmtree(snapshot_path + '/code')
-    shutil.copytree('.', snapshot_path + '/code', shutil.ignore_patterns(['.git', '__pycache__']))
+    shutil.copytree('.', snapshot_path + '/code', shutil.ignore_patterns(['.git/*', '__pycache__/*']))
 
-    logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
-                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
-    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-    logging.info(str(args))
-
-    metric_final = train(args, snapshot_path)
-
-    # 12x4x13
-    # 4x13, 4x13
-    metric_mean, metric_std = np.mean(metric_final, axis=0), np.std(metric_final, axis=0)
-
-    metric_save_path = os.path.join(snapshot_path, 'metric_final_{}_{}.npy'.format(args.dataset_name, args.exp))
-    np.save(metric_save_path, metric_final)
-
-    handler, sh = config_log(snapshot_path, 'total_metric')
-    logging.info('Final Average DSC:{:.4f}, HD95: {:.4f}, NSD: {:.4f}, ASD: {:.4f}, '
-                 'spleen: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'r.kidney: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'l.kidney: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'gallbladder: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'esophagus: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'liver: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'stomach: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'aorta: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'ivc: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'portal and splenic vein: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'pancreas: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'right adrenal gland: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, '
-                 'Left adrenal gland: {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}, {:.4f}+-{:.4f}'
-                 .format(metric_mean[0].mean(), metric_mean[1].mean(), metric_mean[2].mean(), metric_mean[3].mean(),
-                         metric_mean[0][0], metric_std[0][0], metric_mean[1][0], metric_std[1][0], metric_mean[2][0], metric_std[2][0], metric_mean[3][0], metric_std[3][0],
-                         metric_mean[0][1], metric_std[0][1], metric_mean[1][1], metric_std[1][1], metric_mean[2][1], metric_std[2][1], metric_mean[3][1], metric_std[3][1],
-                         metric_mean[0][2], metric_std[0][2], metric_mean[1][2], metric_std[1][2], metric_mean[2][2], metric_std[2][2], metric_mean[3][2], metric_std[3][2],
-                         metric_mean[0][3], metric_std[0][3], metric_mean[1][3], metric_std[1][3], metric_mean[2][3], metric_std[2][3], metric_mean[3][3], metric_std[3][3],
-                         metric_mean[0][4], metric_std[0][4], metric_mean[1][4], metric_std[1][4], metric_mean[2][4], metric_std[2][4], metric_mean[3][4], metric_std[3][4],
-                         metric_mean[0][5], metric_std[0][5], metric_mean[1][5], metric_std[1][5], metric_mean[2][5], metric_std[2][5], metric_mean[3][5], metric_std[3][5],
-                         metric_mean[0][6], metric_std[0][6], metric_mean[1][6], metric_std[1][6], metric_mean[2][6], metric_std[2][6], metric_mean[3][6], metric_std[3][6],
-                         metric_mean[0][7], metric_std[0][7], metric_mean[1][7], metric_std[1][7], metric_mean[2][7], metric_std[2][7], metric_mean[3][7], metric_std[3][7],
-                         metric_mean[0][8], metric_std[0][8], metric_mean[1][8], metric_std[1][8], metric_mean[2][8], metric_std[2][8], metric_mean[3][8], metric_std[3][8],
-                         metric_mean[0][9], metric_std[0][9], metric_mean[1][9], metric_std[1][9], metric_mean[2][9], metric_std[2][9], metric_mean[3][9], metric_std[3][9],
-                         metric_mean[0][10], metric_std[0][10], metric_mean[1][10], metric_std[1][10], metric_mean[2][10], metric_std[2][10], metric_mean[3][10], metric_std[3][10],
-                         metric_mean[0][11], metric_std[0][11], metric_mean[1][11], metric_std[1][11], metric_mean[2][11], metric_std[2][11], metric_mean[3][11], metric_std[3][11],
-                         metric_mean[0][12], metric_std[0][12], metric_mean[1][12], metric_std[1][12], metric_mean[2][12], metric_std[2][12], metric_mean[3][12], metric_std[3][12]))
-
-    logging.getLogger().removeHandler(handler)
-    logging.getLogger().removeHandler(sh)
+    train(args, snapshot_path)

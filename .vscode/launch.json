@@ -79,7 +79,9 @@
             "args": [
                 "--root_path","/media/icml/H4T/DATASET/ACDC",
                 "--exp","ACDC/train_Semi_MagicNet_2D",
-        ],// python train_Semi_MagicNet_2D.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D
+                "--is_save_more_log", "--is_save_checkpoint",
+                //"--resume"
+        ],// python train_Semi_MagicNet_2D.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
         }
     ]

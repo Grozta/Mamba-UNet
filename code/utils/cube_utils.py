@@ -144,12 +144,13 @@ def get_one_cube_rec(ori_ind, nb_chnls):
 
 
 class OrganClassLogger:
-    def __init__(self, num_classes=14):
+    def __init__(self, num_classes=14, class_dist=[], class_total_pixel_store = []):
         self.num_classes = num_classes
-        self.class_total_pixel_store = []
-
-        # e.g.: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        self.class_dist_init = [0 for i in range(self.num_classes)]
+        self.class_total_pixel_store = class_total_pixel_store
+        if len(class_dist):
+            self.class_dist = class_dist
+        else:
+            self.class_dist = [0 for i in range(self.num_classes)]# e.g.: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
     def append_class_list(self, dist_value):
         self.class_total_pixel_store.append(dist_value)
@@ -158,14 +159,14 @@ class OrganClassLogger:
         class_total_list = torch.cat(self.class_total_pixel_store, 0)
         for class_ind in range(self.num_classes):
             class_row_inds = torch.where(class_total_list == class_ind)[0]
-            self.class_dist_init[class_ind] = len(class_row_inds)
+            self.class_dist[class_ind] = len(class_row_inds)
         self.class_total_pixel_store = []
 
     def get_class_dist(self, normalize=False):
-        if isinstance(self.class_dist_init, list):
-            class_dist = torch.Tensor(self.class_dist_init).float()
+        if isinstance(self.class_dist, list):
+            class_dist = torch.Tensor(self.class_dist).float()
         else:
-            class_dist = self.class_dist_init.float()
+            class_dist = self.class_dist.float()
 
         if normalize:
             class_dist = class_dist / class_dist.sum()

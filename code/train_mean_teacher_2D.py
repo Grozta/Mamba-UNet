@@ -34,7 +34,7 @@ import SimpleITK as sitk
 import torch
 from medpy import metric
 from scipy.ndimage import zoom
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 from tqdm import tqdm
 
 # from networks.efficientunet import UNet

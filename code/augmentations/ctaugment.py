@@ -19,7 +19,7 @@ import torch
 from collections import namedtuple
 
 import numpy as np
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 from torchvision import transforms
 

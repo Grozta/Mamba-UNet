@@ -93,12 +93,12 @@ def get_patch_list(volume_batch, cube_size=32):
 
 def get_patch_list_2d(volume_batch, cube_size=32):
 
-    # features: 4, 1, 96, 96, 96
+    # features: 24, 1, 256, 256
     bs, c, w, h = volume_batch.shape
     h_ = h // cube_size * cube_size
     w_ = w // cube_size * cube_size
 
-    # sx: 3, sy: 3
+    # sx: 8, sy: 8
     sx = math.ceil((w_ - cube_size) / cube_size) + 1
     sy = math.ceil((h_ - cube_size) / cube_size) + 1
 
@@ -107,37 +107,37 @@ def get_patch_list_2d(volume_batch, cube_size=32):
         xs = min(cube_size * (x - 1), w_ - cube_size)
         for y in range(1, sy + 1):
             ys = min(cube_size * (y - 1), h_ - cube_size)
-            # 27 patches : 0 ~ 26
-            # add patch_number dimension: 4, 1, 32, 32, 32 -> 4, 1, 1, 32, 32, 32
+            # 64 patches : 0 ~ 63
+            # add patch_number dimension: 24, 1, 32, 32 -> 24, 1, 1, 32, 32
             img_patch = volume_batch[:, :, xs:xs + cube_size, ys:ys + cube_size]
             patch_list.append(img_patch.unsqueeze(1))
 
-    # patch_list: N=27 x [4, 1, 1, 32, 32, 32] (bs, pn, c, w, h, d)
+    # patch_list: N=64 x [24, 1, 1, 32, 32] (bs, pn, c, w, h, d)
     return patch_list
 
 
 def cube_location_loss(model, loc_list, patch_list, idx, labeled_bs=2, cube_size=32):
 
-    # patch_list: N=27 x [4, 1, 1, 32, 32, 32] -> 4x27x1x32x32x32
+    # patch_list: N=64 x [24, 1, 1, 32,32] -> 24x64x1x32x32
     patches = torch.cat(patch_list, dim=1)
     bs = patches.shape[0]
 
-    # 27
+    # 64
     loc_mask = torch.cat(loc_list, dim=0).cuda()
 
     loc_loss = 0
     feat_list = []
 
     for i in range(bs):
-        # patches -> 27x1x32x32x32
-        # feat_patch: [f1, f2, f3, f4, f5], f5 = 27x256x2x2x2
+        # patches -> 64x1x32x32
+        # feat_patch: [f1, f2, f3, f4, f5], f5 = 64x256x2x2
         feat_patch = model.forward_encoder(patches[i, :])
 
         feat_list.append(feat_patch)
 
-        # 27x256x2x2x2 -> 27x2048
+        # 64x256x2x2 ->64x1024
         feat_flatten = torch.flatten(feat_patch[-1], start_dim=1, end_dim=-1)
-        feat_tmp = feat_flatten[idx, :].view(feat_flatten.size())
+        feat_tmp = feat_flatten[idx, :].view(feat_flatten.size()) # mask和图像块特征以相同的方式打乱，然后特征再输入一个全连接层，之后特征和mask做损失
         loc_mask_tmp = loc_mask[idx].view(loc_mask.size())
         loc_pred = model.fc_layer(feat_tmp)
         # loc_pred: 27, 27 loc_mask_tmp: 27

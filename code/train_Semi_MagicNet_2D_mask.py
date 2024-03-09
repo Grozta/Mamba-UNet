@@ -186,28 +186,33 @@ def train(args, snapshot_path):
 
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
+            # volume_batch[24,1,256,256] label_batch[24,256,256]
             volume_batch, label_batch = sampled_batch['image'], sampled_batch['label']
             volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda().to(torch.long)
             unlabeled_volume_batch = volume_batch[args.labeled_bs:]
             labeled_volume_batch = volume_batch[:args.labeled_bs]
 
             model.train()
+            # outputs[24,4,256,256]
             outputs = model(volume_batch)[0] # Original Model Outputs
 
             # Cross-image Partition-and-Recovery
             bs, c, w, h = volume_batch.shape
-            nb_cubes = h // args.cube_size
+            nb_cubes = h // args.cube_size # 8
+            # cube_part_ind[24,1,256,256] cube_rec_ind[24,16,256,256]
             cube_part_ind, cube_rec_ind = cube_utils.get_part_and_rec_ind_2d(volume_shape=volume_batch.shape,
-                                                                          nb_cubes=nb_cubes,
-                                                                          nb_chnls=16)
+                                                                          nb_cubes=nb_cubes,nb_chnls=16)
+            # img_cross_mix[24,1,256,256]                                                              
             img_cross_mix = volume_batch.view(bs, c, w, h)
             img_cross_mix = torch.gather(img_cross_mix, dim=0, index=cube_part_ind)
             img_cross_mix = img_cross_mix.view(bs, c, w, h)
-
+            # outputs_mix[24,4,256,256], embedding[24,16,256,256]
             outputs_mix, embedding = model(img_cross_mix)
-            c_ = embedding.shape[1]
+            c_ = embedding.shape[1] # 16
+            # pred_rec[24,16,256,256]
             pred_rec = torch.gather(embedding, dim=0, index=cube_rec_ind)
             pred_rec = pred_rec.view(bs, c_, w, h)
+            # outputs_unmix[24,4,256,256]
             outputs_unmix = model.forward_prediction_head(pred_rec)
 
             # Get pseudo-label from teacher model
@@ -219,6 +224,7 @@ def train(args, snapshot_path):
                 pred_value_teacher, pred_class_teacher = torch.max(unlab_pl_soft, dim=1)
 
             if iter_num == 0 or args.resume:
+                # loc_list[64,1]
                 loc_list = cube_utils.get_loc_mask_2d(volume_batch, args.cube_size)
 
             # calculate some losses
@@ -231,14 +237,15 @@ def train(args, snapshot_path):
             count_ss = 3
 
             # Magic-cube Location Reasoning
-            # patch_list: N=27 x [4, 1, 1, 32, 32, 32] (bs, pn, c, w, h, d)
+            # patch_list: N=64 x [24, 1, 1, 32, 32] (bs, pn, c, w, h)
             patch_list = cube_losses.get_patch_list_2d(volume_batch, cube_size=args.cube_size)
-            # idx = 27
+            # idx = 64
             idx = torch.randperm(len(patch_list)).cuda()
             # cube location loss
             loc_loss = 0
             feat_list = None
             if loc_list is not None:
+                # feat_list 24x[f1,f2,f3,f4,f5]
                 loc_loss, feat_list = cube_losses.cube_location_loss(model, loc_list, patch_list, idx, args.labeled_bs, cube_size=args.cube_size)
 
             consistency_loss = 0
@@ -248,15 +255,17 @@ def train(args, snapshot_path):
             if feat_list is not None:
                 embed_list = []
                 for i in range(bs):
-                    # pred_tmp: [f1-f5] -> 27x9x32x32x32
-                    # embed_tmp: [f1-f5] -> 27x16x32x32x32
+                    # pred_tmp: [f1-f5] -> 64x4x32x32
+                    # embed_tmp: [f1-f5] -> 64x16x32x32
                     pred_tmp, embed_tmp = model.forward_decoder(feat_list[i])
-                    # add batch_size dimension: 27x9x32x32x32 -> 1x27x9x32x32x32
+                    # add batch_size dimension: 27x9x32x32x32 -> 1x64x16x32x32
                     embed_list.append(embed_tmp.unsqueeze(0))
 
-                # embed_all: 2 x [1, 27, 16, 32, 32, 32] -> 2, 27, 16, 32, 32, 32 -> 2, 16, 96, 96, 96
+                #embed_all 24x64x16x32x32
                 embed_all = torch.cat(embed_list, dim=0)
+                #embed_all_unmix[24x16x256x256]
                 embed_all_unmix = cube_losses.unmix_tensor_2d(embed_all, labeled_volume_batch.shape)
+                #pred_all_unmix[24x4x256x256]
                 pred_all_unmix = model.forward_prediction_head(embed_all_unmix)
                 unmix_pred_soft = F.softmax(pred_all_unmix, dim=1)
 

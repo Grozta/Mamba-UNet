@@ -117,7 +117,18 @@ def get_patch_list_2d(volume_batch, cube_size=32):
 
 
 def cube_location_loss(model, loc_list, patch_list, idx, labeled_bs=2, cube_size=32):
-
+    """
+    图像将分成小的patch块,给定块位置的编码,以及他们的乱序方式
+    把一张二维图像，堆叠成很厚的但是很小的图像块，放入编码器。输入特征和位置编码，以相同的打乱方式进行
+    特征在进行全连接变换，然后和位置做一致性损失
+    Args:
+        model (_type_): 模型
+        loc_list (_type_): 图像块的位置编码 
+        patch_list (_type_): 分成小块的图像列表
+        idx (_type_): 打乱方式的索引
+    Returns:
+        _type_: _description_
+    """
     # patch_list: N=64 x [24, 1, 1, 32,32] -> 24x64x1x32x32
     patches = torch.cat(patch_list, dim=1)
     bs = patches.shape[0]

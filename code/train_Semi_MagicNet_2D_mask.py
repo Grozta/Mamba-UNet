@@ -16,7 +16,7 @@ import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
 from sklearn.model_selection import KFold
-from utils import losses, metrics, ramps, test_util, cube_losses, cube_utils
+from utils import losses, metrics, ramps, test_util, cube_losses, cube_utils, masked_loss
 from config import get_config
 from dataloaders.dataset import *
 from networks.magicnet_2D_mask import VNet_Magic_2D_mask
@@ -30,10 +30,11 @@ parser.add_argument('--exp', type=str, default='MagicNet_2D', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
 parser.add_argument('--labeled_num', type=int, default=7, help='labeled trained samples')
-parser.add_argument('--labeled_bs', type=int, default=12, help='batch_size of labeled data per gpu')
-parser.add_argument('--batch_size', type=int, default=24, help='batch_size per gpu')
+parser.add_argument('--labeled_bs', type=int, default=8, help='batch_size of labeled data per gpu')
+parser.add_argument('--batch_size', type=int, default=16, help='batch_size per gpu')
 parser.add_argument('--patch_size', type=list,  default=[256, 256],help='patch size of network input')
-parser.add_argument('--cube_size', type=int, default=32, help='size of each cube')
+parser.add_argument('--cube_size', type=int, default=32, help='size of each cube,!! cube_size must be divisible by patch_size')
+parser.add_argument('--masked_rate', type=int, default=0.25, help='size of each cube')
 parser.add_argument('--base_lr', type=float, default=0.01, help='maximum epoch number to train')
 parser.add_argument('--deterministic', type=int, default=1, help='whether use deterministic training')
 parser.add_argument('--seed', type=int, default=5179, help='random seed')
@@ -152,7 +153,7 @@ def train(args, snapshot_path):
         for i in range(latest_checkpoint['iteration']):
             batch_sampler.__iter__()
     trainloader = DataLoader(db_train, batch_sampler=batch_sampler,
-                             num_workers=get_current_num_workers(), pin_memory=True)
+                             num_workers=8, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,
                            num_workers=1)
     if not args.resume:
@@ -245,9 +246,16 @@ def train(args, snapshot_path):
             loc_loss = 0
             feat_list = None
             if loc_list is not None:
-                # feat_list 24x[f1,f2,f3,f4,f5]
-                loc_loss, feat_list = cube_losses.cube_location_loss(model, loc_list, patch_list, idx, args.labeled_bs, cube_size=args.cube_size)
+                # pathc inner # feat_list 24x[f1,f2,f3,f4,f5]
+                loc_loss, feat_list = cube_losses.cube_location_loss(model, loc_list, patch_list, idx)
 
+            # patch outer
+            shuffled_loss, pos_embed_pre = masked_loss.get_shuffled_recovery_loss(model,volume_batch.clone(),args.cube_size)
+            mask_recovery_loss, pos_embed_mask = masked_loss.get_mask_recovery_loss(model,volume_batch.clone(),args.masked_rate,args.cube_size)
+            mask_recovery_shuffled_loss = shuffled_loss = F.mse_loss(pos_embed_pre, pos_embed_mask)
+            loc_recv_loss = shuffled_loss + mask_recovery_loss + mask_recovery_shuffled_loss
+
+            
             consistency_loss = 0
             count_consist = 1
 
@@ -319,7 +327,7 @@ def train(args, snapshot_path):
             consistency_loss /= count_consist
 
             # Final Loss
-            loss = supervised_loss + 0.1 * loc_loss + consistency_weight * consistency_loss
+            loss = supervised_loss + 0.1 * loc_loss + consistency_weight * consistency_loss + loc_recv_loss
 
             optimizer.zero_grad()
             loss.backward()

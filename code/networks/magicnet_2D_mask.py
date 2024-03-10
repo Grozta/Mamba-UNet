@@ -215,6 +215,20 @@ class Decoder(nn.Module):
         self.block_nine = convBlock(1, n_filters, n_filters, normalization=normalization)
         self.out_conv = nn.Conv2d(n_filters, n_classes, 1, padding=0)
         self.dropout = nn.Dropout2d(p=0.5, inplace=False)
+    def forword_up_two(self, features):
+        x1 = features[0]
+        x2 = features[1]
+        x3 = features[2]
+        x4 = features[3]
+        x5 = features[4]
+
+        x5_up = self.block_five_up(x5)
+        x5_up = x5_up + x4
+
+        x6 = self.block_six(x5_up)
+        x6_up = self.block_six_up(x6)
+        x6_up = x6_up + x3
+        return x6_up
 
     def forward(self, features):
         x1 = features[0]
@@ -258,30 +272,83 @@ class FcLayer(nn.Module):
 
     def forward(self, x):
         return self.fc_layer(x)
+    
+class Pos_embed_layer(nn.Module):
+    def __init__(self, cube_size=32, patch_size=96):
+        self.patch_size = patch_size
+        super(Pos_embed_layer, self).__init__()
+        self.ncube = patch_size // cube_size
+        self.pos_embed_layer = nn.Sequential(
+            nn.Linear(self.ncube ** 2, 4096),
+            nn.BatchNorm1d(4096),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Linear(4096, patch_size ** 2)
+        )
+        self.conv = nn.Conv2d(in_channels=2, out_channels=2, kernel_size=patch_size//cube_size, stride=patch_size//cube_size, padding=0)
 
+    def forward(self,input, pos_embed, mask):
+        if not len(pos_embed):
+            pos_embed = torch.range(1,(self.ncube)**2).reshape(1,-1).to(input.device)
+        if not len(mask):
+            mask = torch.ones_like(pos_embed).to(input.device)
+        pos_embed_mask = torch.cat([pos_embed, mask], dim=0)
+        embed = self.pos_embed_layer(pos_embed_mask).reshape(-1,self.patch_size,self.patch_size)
+        if self.patch_size != input.shape[-1]:
+            embed = self.conv(embed.unsqueeze(0)).squeeze(0)
+        embed_pos, embed_mask = torch.split(embed, split_size_or_sections=1, dim=0)
+        return input * embed_pos * embed_mask
+    
+class Mix_out_layer(nn.Module):
+    def __init__(self, batch_size=16, up_stage=2, patch_size=96,):
+        super(Mix_out_layer, self).__init__()
+        featue_size = patch_size // (2**up_stage)
+        self.batch_size = batch_size
+        self.mix_out_layer = nn.Sequential(
+            nn.Linear(self.batch_size * featue_size **3 , 4096),
+            nn.BatchNorm1d(4096),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Linear(4096, self.batch_size ** 3)
+        )
 
+    def forward(self,x):
+        return self.mix_out_layer(x)
+    
 class VNet_Magic_2D_mask(nn.Module):
     def __init__(self, n_channels=1, n_classes=2, cube_size=32, patch_size=96, n_filters=16, normalization='instancenorm',
                  has_dropout=False, has_residual=False):
         super(VNet_Magic_2D_mask, self).__init__()
         self.num_classes = n_classes
+        self.patch_size = patch_size
+        self.cube_size = cube_size
+        self.batch_size = 0
         self.encoder = Encoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
         self.decoder = Decoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
         self.fc_layer = FcLayer(cube_size, patch_size)
+        self.pos_embed_layer = Pos_embed_layer(cube_size, patch_size)
+        self.mix_out_layer = Mix_out_layer(up_stage=2,patch_size=patch_size)
+
 
     def forward_prediction_head(self, feat):
         return self.decoder.out_conv(feat)
 
-    def forward_encoder(self, x):
-        # 4x1x96x96x96 -> 4x256x6x6x6
-        # 4x1x32x32x32 -> 4x256x2x2x2(4, 2048)
+    def forward_encoder(self, x, pos_embed=[], mask=[]):
+        x = self.pos_embed_layer(x, pos_embed,mask)
         return self.encoder(x)
 
     def forward_decoder(self, feat_list):
         return self.decoder(feat_list)
+    
+    def forward_mix_pos_mask(self, x, pos_embed= [],mask=[]):
+        x = self.pos_embed_layer(x, pos_embed, mask)
+        features = self.encoder(x)
+        x = self.decoder.forword_up_two(features)
+        output = self.mix_out_layer(x)
+        return output
 
-    def forward(self, input):
-        features = self.encoder(input)
+    def forward(self, x, pos_embed=[],mask=[]):
+        self.batch_size = x.shape[0]
+        x = self.pos_embed_layer(x, pos_embed, mask)
+        features = self.encoder(x)
         out_seg, embedding = self.decoder(features)
         return out_seg, embedding  # 4, 16, 96, 96, 96
 

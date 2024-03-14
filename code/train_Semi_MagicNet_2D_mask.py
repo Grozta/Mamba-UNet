@@ -31,8 +31,8 @@ parser.add_argument('--exp', type=str, default='MagicNet_2D', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
 parser.add_argument('--labeled_num', type=int, default=7, help='labeled trained samples')
-parser.add_argument('--labeled_bs', type=int, default=8, help='batch_size of labeled data per gpu')
-parser.add_argument('--batch_size', type=int, default=16, help='batch_size per gpu')
+parser.add_argument('--labeled_bs', type=int, default=12, help='batch_size of labeled data per gpu')
+parser.add_argument('--batch_size', type=int, default=24, help='batch_size per gpu')
 parser.add_argument('--patch_size', type=list,  default=[256, 256],help='patch size of network input')
 parser.add_argument('--cube_size', type=int, default=32, help='size of each cube,!! cube_size must be divisible by patch_size')
 parser.add_argument('--masked_rate', type=int, default=0.25, help='size of each cube')
@@ -340,8 +340,8 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
 
             if iter_num % args.save_log_interval == 0:
-                logging.info('iteration {}: loss: {:.3f},cons_dist: {:.3f},loss_weight: {:f},loss_loc: {:.3f},loc_recv_loc: {:.3f}'.
-                             format(iter_num, loss, consistency_loss, consistency_weight, 0.1 * loc_loss,loc_recv_loss ))
+                logging.info('iteration {}: loss: {:.3f},supervised_loss: {:.3f},cons_dist: {:.3f},loss_weight: {:f},loss_loc: {:.3f},loc_recv_loc: {:.3f}'.
+                             format(iter_num, loss, supervised_loss, consistency_loss, consistency_weight, 0.1 * loc_loss,loc_recv_loss))
 
             lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
             for param_group in optimizer.param_groups:

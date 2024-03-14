@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import argparse
 from dataloaders.dataset import *
 from networks.magicnet_2D import VNet_Magic_2D
+from networks.magicnet_2D_mask import VNet_Magic_2D_mask
 
 def calculate_metric_percase(pred, gt):
     pred[pred > 0] = 1
@@ -104,7 +105,50 @@ def create_model(n_classes=14, cube_size=32, patchsize=96, ema=False):
             param.detach_()
     return model
 
+def create_model(n_classes=14, cube_size=32, patchsize=96, ema=False):
+    # Network definition
+    net = VNet_Magic_2D_mask(n_channels=1, n_classes=n_classes, cube_size=cube_size, patch_size=patchsize,has_dropout=True,has_residual=True)
+    if torch.cuda.device_count() > 1:
+        net = torch.nn.DataParallel(net)
+    model = net.cuda()
+    if ema:
+        for param in model.parameters():
+            param.detach_()
+    return model
+
 def test_magic(args, snapshot_path):
+    logging.basicConfig(filename=snapshot_path+"/test_log.txt", level=logging.INFO,
+                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    latest_checkpoint_path = os.path.join(snapshot_path,'{}_latest_checkpoint.pth').format(args.model)
+    model = create_model(n_classes=args.num_classes, 
+                         cube_size=args.cube_size, patchsize=args.patch_size[0])
+    latest_checkpoint = torch.load(latest_checkpoint_path)
+    model.load_state_dict(latest_checkpoint['model_state_dict'])
+    db_val = BaseDataSets(base_dir=args.root_path, split="val")
+    valloader = DataLoader(db_val, batch_size=1, shuffle=False,
+                           num_workers=1)
+    model.eval()
+    metric_list = 0.0
+    for i_batch, sampled_batch in enumerate(valloader):
+        metric_i = test_single_volume_magic(
+            sampled_batch["image"], sampled_batch["label"], model, classes=args.num_classes, patch_size=args.patch_size)
+        metric_list += np.array(metric_i)
+        logging.info('iter_num:{},\n'
+                     'dice{:.3f},hd95:{:.3f}\n'
+                     'dice{:.3f},hd95:{:.3f}\n'
+                     'dice{:.3f},hd95:{:.3f}\n'.
+                    format(i_batch 
+                           ,metric_i[0][0], metric_i[0][1]
+                           ,metric_i[1][0], metric_i[1][1]
+                           ,metric_i[2][0], metric_i[2][1]))
+        
+    mean_dice = (np.mean(metric_list, axis=0)[0])/len(valloader)
+    mean_hd95 = (np.mean(metric_list, axis=0)[1])/len(valloader)
+    logging.info('model_val_mean_dice:{:.3f},model_val_mean_hd95: {:.3f}'.
+                    format(mean_dice, mean_hd95))
+
+def test_magic_mask(args, snapshot_path):
     logging.basicConfig(filename=snapshot_path+"/test_log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))

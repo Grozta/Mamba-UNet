@@ -264,10 +264,10 @@ class FcLayer(nn.Module):
         super(FcLayer, self).__init__()
         nt = patch_size // ts
         self.fc_layer = nn.Sequential(
-            nn.Linear((n_filters * 16) * ((ts // 16) ** 2), 4096),
-            nn.BatchNorm1d(4096),
+            nn.Linear((n_filters * 16) * ((ts // 16) ** 2), 256),
+            nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Linear(4096, nt ** 2)
+            nn.Linear(256, nt ** 2)
         )
 
     def forward(self, x):
@@ -279,38 +279,54 @@ class Pos_embed_layer(nn.Module):
         super(Pos_embed_layer, self).__init__()
         self.ncube = patch_size // cube_size
         self.pos_embed_layer = nn.Sequential(
-            nn.Linear(self.ncube ** 2, 4096),
-            nn.BatchNorm1d(4096),
-            nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Linear(4096, patch_size ** 2)
+            nn.Linear(self.ncube ** 2, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(negative_slope=0.2, inplace=False),
+            nn.Linear(256, patch_size ** 2)
         )
         self.conv = nn.Conv2d(in_channels=2, out_channels=2, kernel_size=patch_size//cube_size, stride=patch_size//cube_size, padding=0)
 
     def forward(self,input, pos_embed, mask):
         if not len(pos_embed):
-            pos_embed = torch.range(1,(self.ncube)**2).reshape(1,-1).to(input.device)
+            pos_embed = torch.stack(list({torch.range(0,(self.ncube)**2 -1).view(1,(self.ncube)**2) for bat in range(input.shape[0])}),dim=0)
+            pos_embed = pos_embed.to(input.device)
         if not len(mask):
-            mask = torch.ones_like(pos_embed).to(input.device)
-        pos_embed_mask = torch.cat([pos_embed, mask], dim=0)
-        embed = self.pos_embed_layer(pos_embed_mask).reshape(-1,self.patch_size,self.patch_size)
-        if self.patch_size != input.shape[-1]:
-            embed = self.conv(embed.unsqueeze(0)).squeeze(0)
-        embed_pos, embed_mask = torch.split(embed, split_size_or_sections=1, dim=0)
-        return input * embed_pos * embed_mask
+            mask = torch.stack(list({torch.ones((1,(self.ncube)**2)).reshape(1,(self.ncube)**2) for bat in range(input.shape[0])}))
+            mask = mask.to(input.device)
+        out_embed = []
+        for bat in range(input.shape[0]):
+            pos_embed_mask = torch.cat([pos_embed[bat], mask[bat]], dim=0)
+            embed = self.pos_embed_layer(pos_embed_mask.to(torch.float)).reshape(-1,self.patch_size,self.patch_size)
+            if self.patch_size != input.shape[-1]:
+                embed = self.conv(embed.unsqueeze(0)).squeeze(0)
+            embed_pos, embed_mask = torch.split(embed, split_size_or_sections=1, dim=0)
+            out_embed_slice = input[bat] * embed_pos * embed_mask
+            out_embed.append(out_embed_slice)
+
+        out_embed = torch.stack(out_embed,dim=0)
+        return out_embed
     
 class Mix_out_layer(nn.Module):
     def __init__(self, batch_size=16, up_stage=2, patch_size=96,):
         super(Mix_out_layer, self).__init__()
-        featue_size = patch_size // (2**up_stage)
+        self.featue_size = patch_size // (2**up_stage)
         self.batch_size = batch_size
+        self.conv = nn.Conv2d(in_channels=64, out_channels=16, kernel_size=4, stride=4, padding=0)
+        self.conv1 = nn.Conv2d(in_channels=16, out_channels=8, kernel_size=1, stride=1, padding=0)
+        self.conv2 = nn.Conv2d(in_channels=8, out_channels=4, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=4, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.mix_out_layer = nn.Sequential(
-            nn.Linear(self.batch_size * featue_size **3 , 4096),
-            nn.BatchNorm1d(4096),
+            nn.Linear(self.featue_size, 256),
+            nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Linear(4096, self.batch_size ** 3)
+            nn.Linear(256, self.batch_size ** 2)
         )
 
     def forward(self,x):
+        x = self.conv(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x).reshape(x.shape[0],-1)
         return self.mix_out_layer(x)
     
 class VNet_Magic_2D_mask(nn.Module):
@@ -332,7 +348,7 @@ class VNet_Magic_2D_mask(nn.Module):
         return self.decoder.out_conv(feat)
 
     def forward_encoder(self, x, pos_embed=[], mask=[]):
-        x = self.pos_embed_layer(x, pos_embed,mask)
+        #x = self.pos_embed_layer(x, pos_embed,mask)
         return self.encoder(x)
 
     def forward_decoder(self, feat_list):

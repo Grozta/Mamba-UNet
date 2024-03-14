@@ -9,6 +9,7 @@ import time
 import random
 import numpy as np
 import torch
+torch.autograd.set_detect_anomaly(True)
 import torch.optim as optim
 from torchvision import transforms
 import torch.nn.functional as F
@@ -251,9 +252,10 @@ def train(args, snapshot_path):
 
             # patch outer
             shuffled_loss, pos_embed_pre = masked_loss.get_shuffled_recovery_loss(model,volume_batch.clone(),args.cube_size)
-            mask_recovery_loss, pos_embed_mask = masked_loss.get_mask_recovery_loss(model,volume_batch.clone(),args.masked_rate,args.cube_size)
+            mask_recovery_loss, pos_embed_mask = masked_loss.get_mask_recovery_loss(model,volume_batch.clone(), args.masked_rate, args.cube_size)
             mask_recovery_shuffled_loss = shuffled_loss = F.mse_loss(pos_embed_pre, pos_embed_mask)
             loc_recv_loss = shuffled_loss + mask_recovery_loss + mask_recovery_shuffled_loss
+            #loc_recv_loss = 0.0
 
             
             consistency_loss = 0

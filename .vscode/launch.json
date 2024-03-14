@@ -135,11 +135,13 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_MagicNet_2D",
+                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
+                "--exp","ACDC/train_Semi_MagicNet_2D_mask",
+                "--labeled_bs","6",
+                "--batch_size","12",
                 "--is_save_more_log", "--is_save_checkpoint"
                 //"--resume"
-            ],// python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
+            ],// python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D_mask --is_save_more_log --is_save_checkpoint
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
         }
     ]

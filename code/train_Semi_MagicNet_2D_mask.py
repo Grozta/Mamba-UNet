@@ -340,8 +340,8 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
 
             if iter_num % args.save_log_interval == 0:
-                logging.info('iteration {}: loss: {:.3f},cons_dist: {:.3f},loss_weight: {:f},loss_loc: {:.3f}'.
-                             format(iter_num, loss, consistency_loss, consistency_weight, 0.1 * loc_loss))
+                logging.info('iteration {}: loss: {:.3f},cons_dist: {:.3f},loss_weight: {:f},loss_loc: {:.3f},loc_recv_loc: {:.3f}'.
+                             format(iter_num, loss, consistency_loss, consistency_weight, 0.1 * loc_loss,loc_recv_loss ))
 
             lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
             for param_group in optimizer.param_groups:

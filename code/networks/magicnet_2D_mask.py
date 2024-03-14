@@ -290,12 +290,11 @@ class Pos_embed_layer(nn.Module):
 
     def forward(self,input, pos_embed, mask):
         if not len(pos_embed):
-            pos_embed = torch.stack(list({torch.range(0,(self.ncube)**2 -1).view(1,(self.ncube)**2) for bat in range(input.shape[0])}),dim=0)
+            pos_embed = torch.stack(list({torch.range(0,(self.ncube)**2 -1).view(1,(self.ncube)**2) for bat in range(input.shape[0])}),dim=0).squeeze(dim=1)
             pos_embed = pos_embed.to(input.device)
         if not len(mask):
-            mask = torch.stack(list({torch.ones((1,(self.ncube)**2)).reshape(1,(self.ncube)**2) for bat in range(input.shape[0])}))
+            mask = torch.stack(list({torch.ones((1,(self.ncube)**2)).reshape(1,(self.ncube)**2) for bat in range(input.shape[0])}),dim=0).squeeze(dim=1)
             mask = mask.to(input.device)
-
         pos_embed_mask = torch.cat([pos_embed, mask], dim=1)
         embed = self.pos_embed_layer(pos_embed_mask.to(torch.float).reshape(input.shape[0],-1)).reshape(-1,self.patch_size,self.patch_size)
         if self.patch_size != input.shape[-1]:
@@ -344,6 +343,8 @@ class VNet_Magic_2D_mask(nn.Module):
         return self.decoder.out_conv(feat)
 
     def forward_encoder(self, x, pos_embed=[], mask=[]):
+        # pos_embed mask [b,64]
+        # x[b,1,256,256]
         x = self.pos_embed_layer(x, pos_embed,mask)
         return self.encoder(x)
 
@@ -351,6 +352,8 @@ class VNet_Magic_2D_mask(nn.Module):
         return self.decoder(feat_list)
     
     def forward_mix_pos_mask(self, x, pos_embed= [],mask=[]):
+        # pos_embed mask [b,64]
+        # x[b,1,256,256]
         x = self.pos_embed_layer(x, pos_embed, mask)
         features = self.encoder(x)
         x = self.decoder.forword_up_two(features)
@@ -358,6 +361,8 @@ class VNet_Magic_2D_mask(nn.Module):
         return output
 
     def forward(self, x, pos_embed=[],mask=[]):
+        # pos_embed mask [b,64]
+        # x[b,1,256,256]
         x = self.pos_embed_layer(x, pos_embed, mask)
         features = self.encoder(x)
         out_seg, embedding = self.decoder(features)

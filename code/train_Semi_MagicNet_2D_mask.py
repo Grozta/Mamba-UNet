@@ -77,7 +77,7 @@ def update_ema_variables(model, ema_model, alpha, global_step):
 
 def create_model(n_classes=14, cube_size=32, patchsize=96, ema=False):
     # Network definition
-    net = VNet_Magic_2D_mask(n_channels=1, n_classes=n_classes, cube_size=cube_size, patch_size=patchsize,has_dropout=True,has_residual=True)
+    net = VNet_Magic_2D_mask(n_channels=1, n_classes=n_classes, cube_size=cube_size, patch_size=patchsize, has_dropout=True,has_residual=True)
     if torch.cuda.device_count() > 1:
         net = torch.nn.DataParallel(net)
     model = net.cuda()

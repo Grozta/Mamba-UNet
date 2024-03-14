@@ -275,16 +275,18 @@ class FcLayer(nn.Module):
     
 class Pos_embed_layer(nn.Module):
     def __init__(self, cube_size=32, patch_size=96):
+        self.cube_size = cube_size
         self.patch_size = patch_size
         super(Pos_embed_layer, self).__init__()
         self.ncube = patch_size // cube_size
+        self.scale_factor= cube_size/patch_size
         self.pos_embed_layer = nn.Sequential(
-            nn.Linear(self.ncube ** 2, 256),
+            nn.Linear(2*self.ncube ** 2, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=0.2, inplace=False),
             nn.Linear(256, patch_size ** 2)
         )
-        self.conv = nn.Conv2d(in_channels=2, out_channels=2, kernel_size=patch_size//cube_size, stride=patch_size//cube_size, padding=0)
+        self.conv = nn.Conv2d(in_channels=12, out_channels=12, kernel_size=patch_size//cube_size, stride=patch_size//cube_size, padding=0)
 
     def forward(self,input, pos_embed, mask):
         if not len(pos_embed):
@@ -293,24 +295,19 @@ class Pos_embed_layer(nn.Module):
         if not len(mask):
             mask = torch.stack(list({torch.ones((1,(self.ncube)**2)).reshape(1,(self.ncube)**2) for bat in range(input.shape[0])}))
             mask = mask.to(input.device)
-        out_embed = []
-        for bat in range(input.shape[0]):
-            pos_embed_mask = torch.cat([pos_embed[bat], mask[bat]], dim=0)
-            embed = self.pos_embed_layer(pos_embed_mask.to(torch.float)).reshape(-1,self.patch_size,self.patch_size)
-            if self.patch_size != input.shape[-1]:
-                embed = self.conv(embed.unsqueeze(0)).squeeze(0)
-            embed_pos, embed_mask = torch.split(embed, split_size_or_sections=1, dim=0)
-            out_embed_slice = input[bat] * embed_pos * embed_mask
-            out_embed.append(out_embed_slice)
 
-        out_embed = torch.stack(out_embed,dim=0)
+        pos_embed_mask = torch.cat([pos_embed, mask], dim=1)
+        embed = self.pos_embed_layer(pos_embed_mask.to(torch.float).reshape(input.shape[0],-1)).reshape(-1,self.patch_size,self.patch_size)
+        if self.patch_size != input.shape[-1]:
+            embed = F.interpolate(embed.unsqueeze(0), scale_factor=self.scale_factor, mode='bilinear', align_corners=False).squeeze(0)
+        embed = embed.unsqueeze(dim=1)
+        out_embed = input * embed
         return out_embed
     
 class Mix_out_layer(nn.Module):
-    def __init__(self, batch_size=16, up_stage=2, patch_size=96,):
+    def __init__(self, up_stage=2, patch_size=96,):
         super(Mix_out_layer, self).__init__()
         self.featue_size = patch_size // (2**up_stage)
-        self.batch_size = batch_size
         self.conv = nn.Conv2d(in_channels=64, out_channels=16, kernel_size=4, stride=4, padding=0)
         self.conv1 = nn.Conv2d(in_channels=16, out_channels=8, kernel_size=1, stride=1, padding=0)
         self.conv2 = nn.Conv2d(in_channels=8, out_channels=4, kernel_size=4, stride=2, padding=1)
@@ -319,7 +316,7 @@ class Mix_out_layer(nn.Module):
             nn.Linear(self.featue_size, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Linear(256, self.batch_size ** 2)
+            nn.Linear(256, self.featue_size ** 2)
         )
 
     def forward(self,x):
@@ -336,7 +333,6 @@ class VNet_Magic_2D_mask(nn.Module):
         self.num_classes = n_classes
         self.patch_size = patch_size
         self.cube_size = cube_size
-        self.batch_size = 0
         self.encoder = Encoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
         self.decoder = Decoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
         self.fc_layer = FcLayer(cube_size, patch_size)
@@ -348,7 +344,7 @@ class VNet_Magic_2D_mask(nn.Module):
         return self.decoder.out_conv(feat)
 
     def forward_encoder(self, x, pos_embed=[], mask=[]):
-        #x = self.pos_embed_layer(x, pos_embed,mask)
+        x = self.pos_embed_layer(x, pos_embed,mask)
         return self.encoder(x)
 
     def forward_decoder(self, feat_list):
@@ -362,7 +358,6 @@ class VNet_Magic_2D_mask(nn.Module):
         return output
 
     def forward(self, x, pos_embed=[],mask=[]):
-        self.batch_size = x.shape[0]
         x = self.pos_embed_layer(x, pos_embed, mask)
         features = self.encoder(x)
         out_seg, embedding = self.decoder(features)

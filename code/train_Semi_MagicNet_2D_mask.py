@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_name', type=str, default='ACDC', help='dataset_name')
 parser.add_argument('--root_path', type=str, default='../ACDC', help='Name of Dataset')
 parser.add_argument('--pretrain_path', type=str, default='../pretrained_ckpt/MagicNet_2D_mask_pretrain.pth', help='path of pretrain')
-parser.add_argument('--exp', type=str, default='MagicNet_2D', help='exp_name')
-parser.add_argument('--model', type=str, default='V-Net_2D', help='model_name')
+parser.add_argument('--exp', type=str, default='VNet_Magic_2D_mask', help='exp_name')
+parser.add_argument('--model', type=str, default='V-Net_2D_mask', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
 parser.add_argument('--labeled_num', type=int, default=7, help='labeled trained samples')
 parser.add_argument('--labeled_bs', type=int, default=12, help='batch_size of labeled data per gpu')
@@ -133,10 +133,11 @@ def train(args, snapshot_path):
     optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=0.0001)
     dice_loss = losses.MagicDiceLoss_2D(n_classes=args.num_classes)
 
-    if os.path.exists(args.pretrain) and not args.resume:
-        pretrain = torch.load(args.pretrain)
+    if os.path.exists(args.pretrain_path) and not args.resume:
+        pretrain = torch.load(args.pretrain_path)
         model.load_state_dict(pretrain)
         ema_model.load_state_dict(pretrain)
+        logging.info("finished load pretrain:{}".format(args.pretrain_path))
 
     if args.resume:
         latest_checkpoint = torch.load(latest_checkpoint_path)
@@ -170,8 +171,7 @@ def train(args, snapshot_path):
     lr_ = args.base_lr
     iterator = tqdm(range(max_epoch), ncols=70)
     if args.resume:
-        iterator.update(latest_checkpoint['epoch'])
-        iter_num = latest_checkpoint['iteration']
+        resume_iterator = True
         dist_logger = cube_utils.OrganClassLogger(
             num_classes=args.num_classes,
             class_dist=latest_checkpoint['dist_logger_class_dist'],
@@ -179,9 +179,9 @@ def train(args, snapshot_path):
 
         best_performance =latest_checkpoint['best_performance']
         performance = latest_checkpoint['performance']
-        logging.info("checkpoint has recovery.epoch_num:{},iter_num:{}".format(iterator.n,iter_num))
+        logging.info("checkpoint has recovery.best_performance:{},performance:{} and dist_logger".format(best_performance,performance))
     else:
-
+        resume_iterator = False
         iter_num = 0
         best_performance = 0.0
         performance = 0.0
@@ -193,6 +193,12 @@ def train(args, snapshot_path):
     ema_model.train()
 
     for epoch_num in iterator:
+        if(resume_iterator and args.resume):
+            resume_iterator = False
+            iterator.update(latest_checkpoint['epoch'])
+            iter_num = latest_checkpoint['iteration']
+            logging.info("checkpoint has recovery.epoch_num:{},iter_num:{}".format(iterator.n,iter_num))
+
         for i_batch, sampled_batch in enumerate(trainloader):
             # volume_batch[24,1,256,256] label_batch[24,256,256]
             volume_batch, label_batch = sampled_batch['image'], sampled_batch['label']

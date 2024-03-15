@@ -27,6 +27,7 @@ import multiprocessing
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_name', type=str, default='ACDC', help='dataset_name')
 parser.add_argument('--root_path', type=str, default='../ACDC', help='Name of Dataset')
+parser.add_argument('--pretrain_path', type=str, default='../pretrained_ckpt/MagicNet_2D_mask_pretrain.pth', help='path of pretrain')
 parser.add_argument('--exp', type=str, default='MagicNet_2D_mask_pretrain', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D_mask', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
@@ -130,6 +131,10 @@ def train(args, snapshot_path):
     optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=0.0001)
     dice_loss = losses.MagicDiceLoss_2D(n_classes=args.num_classes)
 
+    if os.path.exists(args.pretrain_path) and not args.resume:
+        pretrain = torch.load(args.pretrain_path)
+        model.load_state_dict(pretrain)
+
     if args.resume:
         latest_checkpoint = torch.load(latest_checkpoint_path)
         model.load_state_dict(latest_checkpoint['model_state_dict'])
@@ -158,6 +163,8 @@ def train(args, snapshot_path):
     
     loc_list = None
     model.train()
+    best_loss = 1.0
+    best_state_dict = None
 
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
@@ -187,7 +194,7 @@ def train(args, snapshot_path):
             loss.backward()
             optimizer.step()
 
-            iter_num = iter_num + 1
+            
 
             if iter_num % args.save_log_interval == 0:
                 logging.info('iteration {}: loss: {:.3f},'
@@ -202,6 +209,11 @@ def train(args, snapshot_path):
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr_
 
+            if best_loss>loss.item():
+                best_loss = loss.item()
+                best_state_dict = model.state_dict()
+                writer.add_scalar('loss/best_loss', best_loss, iter_num)
+
             if iter_num % args.save_log_interval == 0 and args.is_save_more_log:
 
                 writer.add_scalar('lr', lr_, iter_num)
@@ -214,6 +226,7 @@ def train(args, snapshot_path):
             if iter_num % 10000 == 0 or iter_num >= args.max_iterations:
                 save_mode_path = os.path.join(snapshot_path,'MagicNet_2D_mask_pretrain_model_iter_{}.pth'.format(iter_num))
                 torch.save(model.state_dict(), save_mode_path)
+
                 logging.info("save model to {}".format(save_mode_path))
                                 # save resume checkpoint 
                 latest_checkpoint = {
@@ -222,16 +235,19 @@ def train(args, snapshot_path):
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 }
-                
+                latest_checkpoint_path = os.path.join(snapshot_path,'MagicNet_2D_mask_pretrain_model_latest_checkpoint.pth')
                 torch.save(latest_checkpoint, latest_checkpoint_path)
                 logging.info("save model to {}".format(latest_checkpoint_path))
 
             model.train()
-
+            
             if iter_num >= args.max_iterations:
                 break
+            iter_num = iter_num + 1
             model.train()
         if iter_num >= args.max_iterations:
+            save_mode_path = os.path.join(snapshot_path,'MagicNet_2D_mask_pretrain_model_best.pth')
+            torch.save(best_state_dict, save_mode_path)
             iterator.close()
             break
     writer.close()

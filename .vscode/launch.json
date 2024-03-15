@@ -143,6 +143,22 @@
                 //"--resume"
             ],// python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D_mask --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
+        },{
+            "name": "ACDC_Magic_2D_mask_pretrain",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_Semi_MagicNet_2D_mask_pretrain.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path","/media/icml/H4T/DATASET/ACDC",
+                "--exp","ACDC/MagicNet_2D_mask_pretain",
+                "--batch_size","8",
+                "--is_save_more_log", "--is_save_checkpoint"
+                //"--resume"
+            ],// python train_Semi_MagicNet_2D_mask_pretrain.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/MagicNet_2D_mask_pretain --batch_size 8 --is_save_more_log --is_save_checkpoint
+            "env": {"CUDA_VISIBLE_DEVICES":"0",}
         }
     ]
 }

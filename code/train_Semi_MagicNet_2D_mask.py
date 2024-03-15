@@ -27,6 +27,7 @@ import multiprocessing
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_name', type=str, default='ACDC', help='dataset_name')
 parser.add_argument('--root_path', type=str, default='../ACDC', help='Name of Dataset')
+parser.add_argument('--pretrain_path', type=str, default='../pretrained_ckpt/MagicNet_2D_mask_pretrain.pth', help='path of pretrain')
 parser.add_argument('--exp', type=str, default='MagicNet_2D', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
@@ -131,6 +132,11 @@ def train(args, snapshot_path):
                              cube_size=args.cube_size, patchsize=args.patch_size[0], ema=True)
     optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=0.9, weight_decay=0.0001)
     dice_loss = losses.MagicDiceLoss_2D(n_classes=args.num_classes)
+
+    if os.path.exists(args.pretrain) and not args.resume:
+        pretrain = torch.load(args.pretrain)
+        model.load_state_dict(pretrain)
+        ema_model.load_state_dict(pretrain)
 
     if args.resume:
         latest_checkpoint = torch.load(latest_checkpoint_path)

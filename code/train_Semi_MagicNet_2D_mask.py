@@ -27,7 +27,7 @@ import multiprocessing
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_name', type=str, default='ACDC', help='dataset_name')
 parser.add_argument('--root_path', type=str, default='../ACDC', help='Name of Dataset')
-parser.add_argument('--pretrain_path', type=str, default='../pretrained_ckpt/MagicNet_2D_mask_pretrain.pth', help='path of pretrain')
+parser.add_argument('--pretrain_path', type=str, default='../pretrained_ckpt/xxxx.pth', help='path of pretrain')
 parser.add_argument('--exp', type=str, default='VNet_Magic_2D_mask', help='exp_name')
 parser.add_argument('--model', type=str, default='V-Net_2D_mask', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,help='output channel of network')
@@ -387,8 +387,8 @@ def train(args, snapshot_path):
                     metric_list += np.array(metric_i)
                 
                 # save validation log
-                performance = np.mean(metric_list, axis=0)[0]
-                mean_hd95 = np.mean(metric_list, axis=0)[1]
+                performance = np.mean(metric_list, axis=0)[0]/len(valloader)
+                mean_hd95 = np.mean(metric_list, axis=0)[1]/len(valloader)
                 logging.info('iter_num:{},model_val_mean_dice:{:.3f},model_val_mean_hd95: {:.3f}'.
                              format(iter_num, performance, mean_hd95))
                 

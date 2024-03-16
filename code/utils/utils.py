@@ -1,26 +1,25 @@
-# import os
-# import logging
-# import sys
+import time
+
+# 定义一个装饰器函数
+def calculate_function_run_time(func_name):
+    """计算函数运行时间的装饰器"""
+    def decorator_timer(func):
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            res = func(*args, **kwargs)
+            end_time = time.time()
+            run_time = end_time - start_time
+            print("[{}]运行时间：".format(func_name), run_time, "秒")
+            return res
+        return wrapper
+    return decorator_timer
+
+@calculate_function_run_time("looper")
+def looper(init_val):
+    for e in range(init_val):
+        print("{}".format(e))
+        time.sleep(1)
 
 
-# def create_exp_dir(path, desc='Experiment dir: {}'):
-#     if not os.path.exists(path):
-#         os.makedirs(path)
-#     print(desc.format(path))
-
-
-# def create_dir(path):
-#     if not os.path.exists(path):
-#         os.makedirs(path)
-
-
-# def get_logger(log_dir):
-#     create_exp_dir(log_dir)
-#     log_format = '%(asctime)s %(message)s'
-#     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=log_format, datefmt='%m/%d %I:%M:%S %p')
-#     fh = logging.FileHandler(os.path.join(log_dir, 'run.log'))
-#     fh.setFormatter(logging.Formatter(log_format))
-#     logger = logging.getLogger('Nas Seg')
-#     logger.addHandler(fh)
-#     return logger
-
+if __name__ == "__main__":
+    looper(5)

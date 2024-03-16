@@ -136,9 +136,10 @@
             "justMyCode": false,
             "args": [
                 "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_MagicNet_2D_mask",
-                "--labeled_bs","4", 
-                "--batch_size","8",
+                "--exp","ACDC/train_Semi_MagicNet_2D_mask_test",
+                "--labeled_bs","6", 
+                "--batch_size","12",
+                "--max_iterations","40000",
                 "--is_save_more_log", "--is_save_checkpoint"
                 //"--resume"
             ],// python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D_mask --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint

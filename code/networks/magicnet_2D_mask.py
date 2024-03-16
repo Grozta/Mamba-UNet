@@ -215,20 +215,6 @@ class Decoder(nn.Module):
         self.block_nine = convBlock(1, n_filters, n_filters, normalization=normalization)
         self.out_conv = nn.Conv2d(n_filters, n_classes, 1, padding=0)
         self.dropout = nn.Dropout2d(p=0.5, inplace=False)
-    def forword_up_two(self, features):
-        x1 = features[0]
-        x2 = features[1]
-        x3 = features[2]
-        x4 = features[3]
-        x5 = features[4]
-
-        x5_up = self.block_five_up(x5)
-        x5_up = x5_up + x4
-
-        x6 = self.block_six(x5_up)
-        x6_up = self.block_six_up(x6)
-        x6_up = x6_up + x3
-        return x6_up
 
     def forward(self, features):
         x1 = features[0]
@@ -306,23 +292,15 @@ class Pos_embed_layer(nn.Module):
 class Mix_out_layer(nn.Module):
     def __init__(self, up_stage=2, patch_size=96,):
         super(Mix_out_layer, self).__init__()
-        self.featue_size = patch_size // (2**up_stage)
-        self.conv = nn.Conv2d(in_channels=64, out_channels=16, kernel_size=4, stride=4, padding=0)
-        self.conv1 = nn.Conv2d(in_channels=16, out_channels=8, kernel_size=1, stride=1, padding=0)
-        self.conv2 = nn.Conv2d(in_channels=8, out_channels=4, kernel_size=4, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(in_channels=4, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.conv = nn.Conv2d(in_channels=16, out_channels=1, kernel_size=5, stride=5, padding=2)
         self.mix_out_layer = nn.Sequential(
-            nn.Linear(self.featue_size, 256),
+            nn.Linear(52**2, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Linear(256, self.featue_size ** 2)
         )
 
     def forward(self,x):
-        x = self.conv(x)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x).reshape(x.shape[0],-1)
+        x = self.conv(x).reshape(x.shape[0],-1)
         return self.mix_out_layer(x)
     
 class VNet_Magic_2D_mask(nn.Module):
@@ -356,7 +334,7 @@ class VNet_Magic_2D_mask(nn.Module):
         # x[b,1,256,256]
         x = self.pos_embed_layer(x, pos_embed, mask)
         features = self.encoder(x)
-        x = self.decoder.forword_up_two(features)
+        _,x = self.decoder(features)
         output = self.mix_out_layer(x)
         return output
 

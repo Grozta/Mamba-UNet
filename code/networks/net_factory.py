@@ -16,6 +16,8 @@ parser.add_argument('--exp', type=str,
                     default='ACDC/Cross_Supervision_CNN_Trans2D', help='experiment_name')
 parser.add_argument('--model', type=str,
                     default='unet', help='model_name')
+parser.add_argument('--vnet_n_filters', type=int,
+                    default=16, help='vnet_n_filters')
 parser.add_argument('--max_iterations', type=int,
                     default=30000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=8,

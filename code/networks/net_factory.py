@@ -2,6 +2,7 @@ from networks.efficientunet import Effi_UNet
 from networks.enet import ENet
 from networks.pnet import PNet2D
 from networks.unet import UNet, UNet_DS, UNet_URPC, UNet_CCT
+from networks.magicnet_2D import VNet_2D
 import argparse
 from networks.vision_transformer import SwinUnet as ViT_seg
 from networks.config import get_config
@@ -72,9 +73,11 @@ args = parser.parse_args()
 config = get_config(args)
 
 
-def net_factory(net_type="unet", in_chns=1, class_num=4):
+def net_factory(net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
     if net_type == "unet":
         net = UNet(in_chns=in_chns, class_num=class_num).cuda()
+    elif net_type == "vnet":
+        net = VNet_2D(in_chns, class_num,n_filters=vnet_n_filters).cuda()
     elif net_type == "enet":
         net = ENet(in_channels=in_chns, num_classes=class_num).cuda()
     elif net_type == "unet_ds":

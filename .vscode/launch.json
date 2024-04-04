@@ -81,8 +81,7 @@
                 "--labeled_bs","5",
             ],// python train_Semi_Mamba_UNet.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 7 --batch_size 10 --labeled_bs 5
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },
-        {
+        },{
             "name": "fully_supervised_2D_ViT",
             "type": "debugpy",
             "request": "launch",
@@ -98,6 +97,23 @@
                 "--seed", "5179",
                 "--batch_size","18"
             ],// python -u train_fully_supervised_2D_ViT.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/swinunet --model swinunet --max_iterations 10000 --batch_size 18 --seed 5179
+            "env": {"CUDA_VISIBLE_DEVICES":"0",}
+        },{
+            "name": "fully_supervised_2D_VIM",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_fully_supervised_2D_VIM.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
+                "--exp", "ACDC/VIM_Test",
+                "--max_iterations","10000",
+                "--model", "mambaunet",
+                "--seed", "5179",
+                "--batch_size","18"
+            ],// python train_fully_supervised_2D_VIM.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/VIM --model mambaunet --max_iterations 10000 --batch_size 18
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
         },{
             "name": "10%ACDC_Magic_2D",

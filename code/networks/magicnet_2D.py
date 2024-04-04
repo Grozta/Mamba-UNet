@@ -284,6 +284,31 @@ class VNet_Magic_2D(nn.Module):
         features = self.encoder(input)
         out_seg, embedding = self.decoder(features)
         return out_seg, embedding  # 4, 16, 96, 96, 96
+    
+class VNet_2D(nn.Module):
+    def __init__(self, n_channels=1, n_classes=2, cube_size=32, patch_size=96, n_filters=16, normalization='instancenorm',
+                 has_dropout=False, has_residual=False):
+        super(VNet_2D, self).__init__()
+        self.num_classes = n_classes
+        self.encoder = Encoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
+        self.decoder = Decoder(n_channels, n_classes, n_filters, normalization, has_dropout, has_residual)
+        self.fc_layer = FcLayer(cube_size, patch_size)
+
+    def forward_prediction_head(self, feat):
+        return self.decoder.out_conv(feat)
+
+    def forward_encoder(self, x):
+        # 4x1x96x96x96 -> 4x256x6x6x6
+        # 4x1x32x32x32 -> 4x256x2x2x2(4, 2048)
+        return self.encoder(x)
+
+    def forward_decoder(self, feat_list):
+        return self.decoder(feat_list)
+
+    def forward(self, input):
+        features = self.encoder(input)
+        out_seg, embedding = self.decoder(features)
+        return out_seg  # 4, 16, 96, 96, 96
 
 
 if __name__ == '__main__':

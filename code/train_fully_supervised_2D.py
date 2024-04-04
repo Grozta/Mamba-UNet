@@ -35,6 +35,8 @@ parser.add_argument('--model', type=str,
                     default='unet', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
+parser.add_argument('--vnet_n_filters', type=int,
+                    default=16, help='vnet_n_filters')
 parser.add_argument('--max_iterations', type=int,
                     default=10000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=24,
@@ -69,7 +71,7 @@ def train(args, snapshot_path):
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
 
-    model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes)
+    model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
     db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
         RandomGenerator(args.patch_size)
     ]))

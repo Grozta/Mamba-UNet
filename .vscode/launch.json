@@ -213,6 +213,23 @@
                 "--is_save_more_log", "--is_save_checkpoint"
             ],// python train_Semi_Mamba_2D_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Semi_Manba_mask_2D --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
             "env": {"CUDA_VISIBLE_DEVICES":"0",}
+        },{
+            "name": "3DViM_2D",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/code/",
+            "program": "${workspaceFolder}/code/train_Semi_Mamba_Contrastive_Consistency.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
+                "--exp","ACDC/train_Contrastive_Consistency_ViM_2D",
+                "--num_classes","4",
+                "--labeled_num","7",
+                "--batch_size","4",
+                "--labeled_bs","2"
+            ],
+            //python train_Semi_Mamba_Contrastive_Consistency.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Contrastive_Consistency_ViM_2D --num_classes 4 --labeled_num 7 --batch_size 4 --labeled_bs 2
+            "justMyCode": false
         }
     ]
 }

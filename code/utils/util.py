@@ -52,7 +52,7 @@ def load_model(path):
     return model
 
 
-def load_checkpoint(path, model, optimizer, from_ddp=False):
+def load_checkpoint_4_2C(path, model, optimizer, from_ddp=False):
     """loads previous checkpoint
     Args:
         path (str): path to checkpoint
@@ -72,6 +72,26 @@ def load_checkpoint(path, model, optimizer, from_ddp=False):
     loss = checkpoint["loss"]
     return model, optimizer, checkpoint["epoch"], loss.item()
 
+def load_checkpoint_4_2C(path, model, optimizer, projector1, projector2, cta):
+    """in train_Semi_Mamba_Contrastive_Consistency loads previous checkpoint"""
+    """useage:
+    
+    model1, optimizer1, projector_1, projector_3, cta, start_epoch, best_performance1 = util.load_checkpoint(
+                snapshot_path + "/" + model_checkpoint, model1, optimizer1,projector_1,projector_3,cta,
+            )   
+    """
+    # load checkpoint
+    checkpoint = torch.load(path)
+
+    model.load_state_dict(checkpoint["state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    projector1.load_state_dict(checkpoint["projector1"])
+    projector2.load_state_dict(checkpoint["projector2"])
+    cta = checkpoint["cta"]
+    epoch = checkpoint["epoch"]
+    best_performance = checkpoint["best_performance1"]
+
+    return model, optimizer,projector1,projector2,cta, epoch, best_performance
 
 def restore_model(logger, snapshot_path, model_num=None):
     """wrapper function to read log dir and load restore a previous checkpoint
@@ -101,7 +121,7 @@ def restore_model(logger, snapshot_path, model_num=None):
 
     try:
         logger.info(f"Restoring model checkpoint: {model_checkpoint}")
-        model, optimizer, start_epoch, performance = load_checkpoint(
+        model, optimizer, start_epoch, performance = load_checkpoint_4_2C(
             snapshot_path + "/" + model_checkpoint, model, optimizer
         )
         logger.info(f"Models restored from iteration {iter_num}")
@@ -118,6 +138,27 @@ def save_checkpoint(epoch, model, optimizer, loss, path):
             "state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "loss": loss,
+        },
+        path,
+    )
+
+
+def save_checkpoint_4_2C(epoch, model, optimizer,projector1,projector2,cta, best_performance1, path):
+    """ in train_Semi_Mamba_Contrastive_Consistency 
+    Saves model as checkpoint
+    """
+    """ useage:
+    util.save_checkpoint(epoch_num, model1, optimizer1, projector_1, projector_3, cta, best_performance1, save_mode_path)
+    """
+    torch.save(
+        {
+            "epoch": epoch,
+            "state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "projector1": projector1.state_dict(),
+            "projector2": projector2.state_dict(),
+            "cta":cta,
+            "best_performance1" : best_performance1
         },
         path,
     )

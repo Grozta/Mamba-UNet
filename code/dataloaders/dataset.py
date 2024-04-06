@@ -271,11 +271,11 @@ class CTATransform(object):
         label_aug = to_tensor(label_aug).squeeze(0)
         label_aug = torch.round(255 * label_aug).int()
 
-        sample = {
-            "image_weak": to_tensor(image_weak),
-            "image_strong": to_tensor(image_strong),
-            "label_aug": label_aug,
-        }
+        sample["image"] = image
+        sample["label"] = label
+        sample["image_weak"] = to_tensor(image_weak)
+        sample["image_strong"] = to_tensor(image_strong)
+        sample["label_aug"] = label_aug
         return sample
 
     def cta_apply(self, pil_img, ops):

@@ -658,7 +658,7 @@ def train(args, snapshot_path):
                     best_performance2 = performance2
                     if performance2 > 0:
                         save_mode_path = os.path.join(snapshot_path,
-                                                      'model2_latest')
+                                                      'model2_latest.pth')
                         save_best = os.path.join(snapshot_path,
                                                  '{}_best_model2.pth'.format(args.model))
 
@@ -674,13 +674,13 @@ def train(args, snapshot_path):
                 'current best dice coef model 1 {}, model 2 {}'.format(best_performance1, best_performance2))
 
             if iter_num % 3000 == 0:
-                save_mode_path = os.path.join(snapshot_path, 'model1_latest')
+                save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
                 # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_mode_path)
                 util.save_checkpoint_4_2C(epoch_num, model1, optimizer1, projector_1, projector_3, cta, best_performance1, save_mode_path)
                 logging.info("save model1 to {}".format(save_mode_path))
 
-                save_mode_path = os.path.join(snapshot_path, 'model1_latest')
+                save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
                 # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_mode_path)
                 util.save_checkpoint_4_2C(epoch_num, model2, optimizer2, projector_2, projector_4, cta, best_performance2, save_mode_path)

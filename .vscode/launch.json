@@ -230,6 +230,23 @@
             ],
             //python train_Semi_Mamba_Contrastive_Consistency.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Contrastive_Consistency_ViM_2D --num_classes 4 --labeled_num 7 --batch_size 4 --labeled_bs 2
             "justMyCode": false
+        },{
+            "name": "3DVnet_2D",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/code/",
+            "program": "${workspaceFolder}/code/train_Semi_Contrastive_Consistency_vnet.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
+                "--exp","ACDC/train_Semi_Contrastive_Consistency_vnet",
+                "--num_classes","4",
+                "--labeled_num","7",
+                "--batch_size","10",
+                "--labeled_bs","5"
+            ],
+            //python train_Semi_Contrastive_Consistency_vnet.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_Contrastive_Consistency_vnet --num_classes 4 --labeled_num 7 --batch_size 10 --labeled_bs 5
+            "justMyCode": false
         }
     ]
 }

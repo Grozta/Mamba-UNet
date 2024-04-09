@@ -58,18 +58,22 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='ACDC/Cross_teaching_min_max', help='experiment_name')
+                    default='ACDC/train_Semi_Contrastive_Consistency_vnet', help='experiment_name')
 parser.add_argument('--model', type=str,
-                    default='ViM_seg', help='model_name')
+                    default='vnet', help='model_name')
+parser.add_argument('--vnet_n_filters', type=int,
+                    default=32, help='vnet_n_filters')
+parser.add_argument('--pretrain_path', type=str, default='pretrained_ckpt/vnet_32_7_256_model.pth',
+                    help='path of pretrain')
 parser.add_argument('--max_iterations', type=int,
                     default=30000, help='maximum iteration number to train')
-parser.add_argument('--batch_size', type=int, default=24,
+parser.add_argument('--batch_size', type=int, default=16,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
-parser.add_argument('--patch_size', type=list,  default=[224, 224],
+parser.add_argument('--patch_size', type=list,  default=[256, 256],
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--num_classes', type=int,  default=4,
@@ -83,9 +87,9 @@ parser.add_argument(
     help="confidence threshold for using pseudo-labels",
 )
 # label and unlabel
-parser.add_argument('--labeled_bs', type=int, default=12,
+parser.add_argument('--labeled_bs', type=int, default=8,
                     help='labeled_batch_size per epoch')
-parser.add_argument('--labeled_num', type=int, default=136,
+parser.add_argument('--labeled_num', type=int, default=7,
                     help='labeled data')
 # costs
 parser.add_argument('--ema_decay', type=float,  default=0.999, help='ema_decay')
@@ -172,12 +176,17 @@ def train(args, snapshot_path):
 
 #     model1 = create_model(args.model)
 #     model2 = create_model(args.model)
-    model1 = ViM_seg(config, img_size=args.patch_size,
-                     num_classes=args.num_classes).cuda()
-    model1.load_from(config)
-    model2 = ViM_seg(config, img_size=args.patch_size,
-                     num_classes=args.num_classes).cuda()
-    model2.load_from(config)
+    # model1 = ViT_seg(config, img_size=args.patch_size,
+    #                  num_classes=args.num_classes).cuda()
+    # model1.load_from(config)
+    # model2 = ViT_seg(config, img_size=args.patch_size,
+    #                  num_classes=args.num_classes).cuda()
+    # model2.load_from(config)
+    pretrain = torch.load(args.pretrain_path)
+    model1 = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
+    model1.load_state_dict(pretrain, strict=False)
+    model2 = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
+    model2.load_state_dict(pretrain, strict=False)
     
 #     classifier_1 = create_model('classifier')
 #     classifier_2 = create_model('classifier')
@@ -241,7 +250,6 @@ def train(args, snapshot_path):
         return result
 
 
-
     def refresh_policies(db_train, cta,random_depth_weak, random_depth_strong):
         db_train.ops_weak = cta.policy(probe=False, weak=True)
         db_train.ops_strong = cta.policy(probe=False, weak=False)
@@ -253,7 +261,7 @@ def train(args, snapshot_path):
         logging.info(f"CTA depth weak: {cta.random_depth_weak}")
         logging.info(f"CTA depth strong: {cta.random_depth_strong}")
         logging.info(f"\nWeak Policy: {db_train.ops_weak}")
-#         logging.info(f"\nWeak Policy: {max(Counter([a.f for a in db_train.ops_weak]).values())}")
+#       logging.info(f"\nWeak Policy: {max(Counter([a.f for a in db_train.ops_weak]).values())}")
         logging.info(f"Strong Policy: {db_train.ops_strong}")
 
     cta = augmentations.CTAugment()
@@ -531,7 +539,13 @@ def train(args, snapshot_path):
 #             loss = sup_loss + consistency_weight1 * (Loss_contrast_l + unsup_loss + consistency_weight2 *  Loss_contrast_u)
             loss = sup_loss + consistency_weight1 * Loss_contrast_l + consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u
 #             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
-
+            writer.add_scalar('Train/iter_loss', loss, iter_num)
+            writer.add_scalar('Train/iter_sup_loss', sup_loss, iter_num)
+            writer.add_scalar('Train/iter_consistency_weight1', consistency_weight1, iter_num)
+            writer.add_scalar('Train/iter_Loss_contrast_l', Loss_contrast_l, iter_num)
+            writer.add_scalar('Train/iter_unsup_loss', unsup_loss, iter_num)
+            writer.add_scalar('Train/iter_consistency_weight2', consistency_weight2, iter_num)
+            writer.add_scalar('Train/iter_Loss_contrast_u', Loss_contrast_u, iter_num)
             
             running_loss += loss
             running_sup_loss += sup_loss
@@ -704,30 +718,30 @@ def train(args, snapshot_path):
         logging.info('{} Epoch [{:03d}/{:03d}]'.
                              format(datetime.now(), epoch_num, max_epoch))
         logging.info('Train loss: {}'.format(epoch_loss))
-        writer.add_scalar('Train/Loss', epoch_loss, epoch_num)
+        writer.add_scalar('Train/epoch_loss', epoch_loss, epoch_num)
         
         logging.info('Train sup loss: {}'.format(epoch_sup_loss))
-        writer.add_scalar('Train/sup_loss', epoch_sup_loss, epoch_num)
+        writer.add_scalar('Train/epoch_sup_loss', epoch_sup_loss, epoch_num)
         
         logging.info('Train unsup loss: {}'.format(epoch_unsup_loss))
-        writer.add_scalar('Train/unsup_loss', epoch_unsup_loss, epoch_num)
+        writer.add_scalar('Train/epoch_unsup_loss', epoch_unsup_loss, epoch_num)
         
 #         logging.info('Train comple loss: {}'.format(epoch_comple_loss))
 #         writer.add_scalar('Train/comple_loss', epoch_comple_loss, epoch_num)
         
         logging.info('Train contrastive loss: {}'.format(epoch_con_loss))
-        writer.add_scalar('Train/contrastive_loss', epoch_con_loss, epoch_num)
+        writer.add_scalar('Train/epoch_con_loss', epoch_con_loss, epoch_num)
         
         
         
         logging.info('Train weighted contrastive loss: {}'.format(consistency_weight1 * Loss_contrast_l + consistency_weight2 *  Loss_contrast_u))
-        writer.add_scalar('Train/weighted_contrastive_loss', consistency_weight1 * Loss_contrast_l + consistency_weight2 *  Loss_contrast_u, epoch_num)
+        writer.add_scalar('Train/epoch_weighted_contrastive_loss', consistency_weight1 * Loss_contrast_l + consistency_weight2 *  Loss_contrast_u, epoch_num)
         
         logging.info('Train contrastive loss l: {}'.format(epoch_con_loss_l))
-        writer.add_scalar('Train/contrastive_loss_l', epoch_con_loss_l, epoch_num)
+        writer.add_scalar('Train/epoch_contrastive_loss_l', epoch_con_loss_l, epoch_num)
         
         logging.info('Train contrastive loss u: {}'.format(epoch_con_loss_u))
-        writer.add_scalar('Train/contrastive_loss_u', epoch_con_loss_u, epoch_num)
+        writer.add_scalar('Train/epoch_contrastive_loss_u', epoch_con_loss_u, epoch_num)
         
         # update policy parameter bins for sampling
         mean_epoch_error = np.mean(epoch_errors)

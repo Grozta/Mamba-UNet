@@ -561,10 +561,17 @@ def train(args, snapshot_path):
                 
             iter_num = iter_num + 1
 
-            writer.add_scalar("lr", lr_, iter_num)
-            writer.add_scalar("consistency_weight/consistency_weight1", consistency_weight1, iter_num)
-            writer.add_scalar("consistency_weight/consistency_weight2", consistency_weight2, iter_num)
-            writer.add_scalar("loss/model_loss", loss, iter_num)
+            writer.add_scalars("Train/loss_preview",{"model_loss":loss,
+                                       "sup_loss":sup_loss,
+                                       "consistency_weight1 * Loss_contrast_l":consistency_weight1 * Loss_contrast_l,
+                                       "consistency_weight1 * unsup_loss":consistency_weight1 * unsup_loss,
+                                       "consistency_weight2 * Loss_contrast_u":consistency_weight2 * Loss_contrast_u
+                                       }, iter_num)
+            
+            writer.add_scalars("Train/consistency",{"consistency_weight1":consistency_weight1,
+                                       "consistency_weight2":consistency_weight2,
+                                       "lr":lr_}, iter_num)
+            
             logging.info("iteration %d : model loss : %f" % (iter_num, loss.item()))
 
             if iter_num % 50 == 0:

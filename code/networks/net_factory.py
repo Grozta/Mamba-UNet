@@ -10,7 +10,7 @@ from networks.config import get_config
 from networks.nnunet import initialize_network
 from networks.projector import projectors, classifier
 
-def net_factory(net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
+def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
     if net_type == "unet":
         net = UNet(in_chns=in_chns, class_num=class_num).cuda()
     elif net_type == "vnet":

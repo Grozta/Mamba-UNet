@@ -60,7 +60,7 @@ parser.add_argument('--root_path', type=str,
 parser.add_argument('--exp', type=str,
                     default='ACDC/Cross_teaching_min_max', help='experiment_name')
 parser.add_argument('--model', type=str,
-                    default='ViM_seg', help='model_name')
+                    default='ViT_Seg', help='model_name')
 parser.add_argument('--max_iterations', type=int,
                     default=30000, help='maximum iteration number to train')
 parser.add_argument('--batch_size', type=int, default=24,
@@ -99,7 +99,7 @@ parser.add_argument('--consistency_rampup', type=float,
                     default=200.0, help='consistency_rampup')
 
 parser.add_argument(
-    '--cfg', type=str, default="../code/configs/vmamba_tiny.yaml", help='path to config file', )
+    '--cfg', type=str, default="../code/configs/swin_tiny_patch4_window7_224_lite.yaml", help='path to config file', )
 parser.add_argument(
     "--opts",
     help="Modify config options by adding 'KEY VALUE' pairs. ",
@@ -161,23 +161,20 @@ def train(args, snapshot_path):
     max_iterations = args.max_iterations
 #     loss_type = 'MT_loss'
 
-    def create_model(net_type,ema=False):
+    def create_model(net_type,ema=False,config = config, args = args):
         # Network definition
-        model = net_factory(net_type=net_type, in_chns=1,
+        model = net_factory(config,args,net_type=net_type, in_chns=1,
                             class_num=num_classes)
         if ema:
             for param in model.parameters():
                 param.detach_()
         return model
 
-#     model1 = create_model(args.model)
-#     model2 = create_model(args.model)
-    model1 = ViM_seg(config, img_size=args.patch_size,
-                     num_classes=args.num_classes).cuda()
-    model1.load_from(config)
-    model2 = ViM_seg(config, img_size=args.patch_size,
-                     num_classes=args.num_classes).cuda()
-    model2.load_from(config)
+    model1 = create_model(net_type=args.model).cuda()
+    model2 = create_model(net_type=args.model).cuda()
+    if args.model == "ViT_Seg" or args.model =="ViM_seg":  
+        model1.load_from(config) 
+        model2.load_from(config)
     
 #     classifier_1 = create_model('classifier')
 #     classifier_2 = create_model('classifier')

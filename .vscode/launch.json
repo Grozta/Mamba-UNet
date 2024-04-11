@@ -221,7 +221,7 @@
             "program": "${workspaceFolder}/code/train_Semi_Mamba_Contrastive_Consistency.py",
             "console": "integratedTerminal",
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
+                "--root_path","/media/icml/H4T/DATASET/ACDC",
                 "--exp","ACDC/train_Contrastive_Consistency_ViM_2D_weight7",
                 "--num_classes","4",
                 "--labeled_num","7",
@@ -229,7 +229,7 @@
                 "--labeled_bs","2",
                 "--cfg","../code/configs/vmamba_tiny7.yaml"
             ],
-            //python train_Semi_Mamba_Contrastive_Consistency.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Contrastive_Consistency_ViM_2D --num_classes 4 --labeled_num 7 --batch_size 4 --labeled_bs 2
+            //python train_Semi_Mamba_Contrastive_Consistency.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Contrastive_Consistency_ViM_2D_weight7 --num_classes 4 --labeled_num 7 --batch_size 4 --labeled_bs 2 --cfg ../code/configs/vmamba_tiny7.yaml
             "justMyCode": false
         },{
             "name": "3DVnet_2D",

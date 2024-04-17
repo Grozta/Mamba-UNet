@@ -289,8 +289,20 @@ def grid_shuffle_image(image,shuffle_index):
     shuffled_image = torch.gather(flattened_image, 1, shuffle_index.view(1, -1).expand_as(flattened_image)).reshape(image.shape)
     return shuffled_image
 
+def grid_recover_image_for_muti_index(image,shuffle_index):
+    """ per image connect a shuffle index 
+    Args:
+        image (tensor): [b,c,x,y]
+        shuffle_index (tensor): [b,x,y]
+        
+    """
+    b,c,x,y = image.shape
+    flattened_image = image.view(b,c, -1)
+    recover_image = torch.gather(flattened_image, 2, shuffle_index.view(b, -1).argsort().repeat(1,c).reshape(flattened_image.shape)).reshape(image.shape)
+    return recover_image
+
 def grid_recover_image(image,shuffle_index):
-    """_summary_ 
+    """ all image connect a shuffle index
     Args:
         image (tensor): [b,c,x,y]
         shuffle_index (tensor): [x,y]
@@ -345,13 +357,15 @@ if __name__ == "__main__":
         x2 = x
         ori_img = torch.stack([x1.repeat(2,1,1),x2.repeat(2,1,1)])
         print(ori_img)
-        s_indexs,_ = get_grid_shuffle_index(x.shape,(2,2))
+        s_indexs1,_ = get_grid_shuffle_index(x.shape,(2,2))
+        s_indexs2,_ = get_grid_shuffle_index(x.shape,(2,2))
+        s_indexs = torch.stack([s_indexs1,s_indexs2])
         print(s_indexs)
-        s_x1 = grid_shuffle_image(x1,s_indexs)
-        s_x2 = grid_shuffle_image(x2,s_indexs)
+        s_x1 = grid_shuffle_image(x1,s_indexs1)
+        s_x2 = grid_shuffle_image(x2,s_indexs2)
         img1 = s_x1.repeat(2,1,1)
         img2 = s_x2.repeat(2,1,1)
         out_img = torch.stack([img1,img2])
         print(out_img)
-        recover_img = grid_recover_image(out_img,s_indexs)
+        recover_img = grid_recover_image_for_muti_index(out_img,s_indexs)
         print(recover_img)

@@ -8,7 +8,7 @@ from networks.vision_transformer import SwinUnet as ViT_seg
 from networks.vision_mamba import MambaUnet as ViM_seg
 from networks.config import get_config
 from networks.nnunet import initialize_network
-from networks.projector import projectors, classifier
+from networks.projector import projectors, classifier, Jigsaw_classifier
 
 def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
     if net_type == "unet":
@@ -40,6 +40,8 @@ def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filt
         net = classifier().cuda()
     elif net_type == "projector":
         net = projectors().cuda()
+    elif net_type == "Jigsaw_classifier":
+        net = Jigsaw_classifier().cuda()
     else:
         net = None
     return net

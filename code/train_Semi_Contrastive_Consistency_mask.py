@@ -187,6 +187,7 @@ def train(args, snapshot_path):
     projector_2 = create_model('projector',ema=True)
     projector_3 = create_model('projector')
     projector_4 = create_model('projector')
+    Jigsaw_classifier = create_model('Jigsaw_classifier')
     
     """
     Output model calculation amount and parameter amount
@@ -398,12 +399,17 @@ def train(args, snapshot_path):
         running_con_loss = 0
         for i_batch, sampled_batch in enumerate(zip(trainloader)):
             
-            raw_batch, weak_batch, strong_batch, label_batch_aug, label_batch = (
+            raw_batch, weak_batch, strong_batch, label_batch_aug, label_batch,\
+            Jigsaw_img,shuffle_img_index,shuffle_grid_index = (
                 sampled_batch[0]["image"],
                 sampled_batch[0]["image_weak"],
                 sampled_batch[0]["image_strong"],
                 sampled_batch[0]["label_aug"],
                 sampled_batch[0]["label"],
+                sampled_batch[0]["Jigsaw_img"],
+                sampled_batch[0]["Jigsaw_index"],
+                sampled_batch[0]["Jigsaw_grid_index"]
+                
             )
             label_batch_aug[label_batch_aug>=4] = 0
             label_batch_aug[label_batch_aug<0] = 0
@@ -424,28 +430,20 @@ def train(args, snapshot_path):
                 
             # handle shuffle image 
             raw_batch = raw_batch.cuda()
-            shuffle_img_index,shuffle_grid_index = augmentations.get_grid_shuffle_index((raw_batch.shape[-2],raw_batch.shape[-1]),args.grid_shape)
-            shuffle_img_index,shuffle_grid_index = (shuffle_img_index.cuda(),shuffle_grid_index.cuda())
-            
-            Jigsaw_batch = augmentations.grid_shuffle_image(raw_batch,shuffle_img_index)
+            Jigsaw_batch,shuffle_img_index,shuffle_grid_index = (Jigsaw_img.cuda(),shuffle_img_index.cuda(),shuffle_grid_index.cuda())
 #################################################################################################################################
             # outputs for model
             ########################Jigsaw puzzles#################
             outputs_raw1 = model1(raw_batch)
-            #outputs_raw_soft1 = torch.softmax(outputs_raw1, dim=1)
             outputs_Jigsaw1 = model1(Jigsaw_batch)
-            recover_outputs_Jigsaw1 = augmentations.grid_recover_image(outputs_Jigsaw1,shuffle_img_index)
-            #outputs_Jigsaw_soft1 = torch.softmax(recover_outputs_Jigsaw1, dim=1)
-            Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
+            recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
+            outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
             
             outputs_raw2 = model2(raw_batch)
-            #outputs_raw_soft2 = torch.softmax(outputs_raw2, dim=1)
             outputs_Jigsaw2 = model2(Jigsaw_batch)
-            recover_outputs_Jigsaw2 = augmentations.grid_recover_image(outputs_Jigsaw2,shuffle_img_index)
-            #outputs_Jigsaw_soft2 = torch.softmax(recover_outputs_Jigsaw2, dim=1)
-            Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
+            recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
+            outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
             
-            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)/2
             #######################strong weak Augment#############
             outputs_weak1 = model1(weak_batch)
             outputs_weak_soft1 = torch.softmax(outputs_weak1, dim=1)
@@ -554,7 +552,18 @@ def train(args, snapshot_path):
             contrastive_loss = (Loss_contrast_l + Loss_contrast_u)
             #both
 #             loss = sup_loss + consistency_weight1 * (Loss_contrast_l + unsup_loss + consistency_weight2 *  Loss_contrast_u)
-            loss = sup_loss + consistency_weight1 * Loss_contrast_l + consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u + Jigsaw_loss
+            ##############Jigsaw_loss##################
+            Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
+            Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
+            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)*25
+            
+            Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
+            Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
+            Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
+
+            loss = sup_loss + consistency_weight1 * Loss_contrast_l + \
+            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u +\
+                Jigsaw_loss +Jigsaw_cls_loss
 #             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
 
             
@@ -593,9 +602,13 @@ def train(args, snapshot_path):
                                        "consistency_weight2 * Loss_contrast_u":consistency_weight2 * Loss_contrast_u
                                        }, iter_num)
             
-            writer.add_scalars("Train/Jigsaw_loss",{"Jigsaw_loss":Jigsaw_loss,
+            writer.add_scalars("Train/Jigsaw_recovery_loss",{"Jigsaw_loss":Jigsaw_loss,
                                        "Jigsaw_loss1":Jigsaw1_loss,
                                        "Jigsaw_loss2":Jigsaw1_loss}, iter_num)
+            
+            writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
+                                       "Jigsaw_cls1_loss":Jigsaw_cls1_loss,
+                                       "Jigsaw_cls2_loss":Jigsaw_cls2_loss}, iter_num)
             
             writer.add_scalars("Train/consistency",{"consistency_weight1":consistency_weight1,
                                        "consistency_weight2":consistency_weight2,

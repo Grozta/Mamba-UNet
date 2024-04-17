@@ -250,9 +250,10 @@ def color_jitter(image):
 
 
 class CTATransform(object):
-    def __init__(self, output_size, cta):
+    def __init__(self, output_size, cta,grid_shape = (4,4)):
         self.output_size = output_size
         self.cta = cta
+        self.grid_shape = grid_shape
 
     def __call__(self, sample, ops_weak, ops_strong):
         image, label = sample["image"], sample["label"]
@@ -271,11 +272,18 @@ class CTATransform(object):
         label_aug = to_tensor(label_aug).squeeze(0)
         label_aug = torch.round(255 * label_aug).int()
         
+        # shuffle aug
+        shuffle_img_index,shuffle_grid_index = augmentations.get_grid_shuffle_index((image.shape[-2],image.shape[-1]),self.grid_shape)
+        Jigsaw_img = augmentations.grid_shuffle_image(image,shuffle_img_index)
+        
         sample["image"] = image
         sample["label"] = label
         sample["image_weak"] = to_tensor(image_weak)
         sample["image_strong"] = to_tensor(image_strong)
         sample["label_aug"] = label_aug
+        sample["Jigsaw_img"] = Jigsaw_img
+        sample["Jigsaw_index"] = shuffle_img_index
+        sample["Jigsaw_grid_index"] = shuffle_grid_index
         return sample
 
     def cta_apply(self, pil_img, ops):

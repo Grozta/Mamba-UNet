@@ -358,7 +358,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--root_path",
-                "/media/icml/H4T/DATASET/ACDC",
+                "/home/grozta/Desktop/DATASET/ACDC",
                 "--exp",
                 "ACDC/3DViT_2D_mask",
                 "--num_classes",
@@ -370,7 +370,7 @@
                 "--labeled_bs",
                 "3"
             ],
-            //python train_Semi_Contrastive_Consistency_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/3DViT_2D_mask --num_classes 4 --labeled_num 7 --batch_size 5 --labeled_bs 3
+            //python train_Semi_Contrastive_Consistency_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/3DViT_2D_mask_Jigsaw_cls --num_classes 4 --labeled_num 7 --batch_size 5 --labeled_bs 3
             "justMyCode": false
         }
     ]

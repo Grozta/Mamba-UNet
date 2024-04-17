@@ -91,5 +91,27 @@ class classifier(nn.Module):
 
         return x_out
    
-      
+class Jigsaw_classifier(nn.Module):
+    def __init__(self, inp_dim = 4,ndf=8,grid_shape=(4,4), norm_layer=nn.BatchNorm2d):
+        super(Jigsaw_classifier, self).__init__()
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+        self.grid_shape = grid_shape
+        self.conv_1 = conv(inp_dim, ndf*ndf)
+        self.pool1 = nn.MaxPool2d(7, 7)
+        self.conv_2 = conv(ndf*ndf, ndf*ndf*2)
+        self.pool2 = nn.MaxPool2d(8, 8)
+        self.conv_3 = conv(ndf*ndf*2,ndf*2)
+
+    def forward(self,input):# input[b,4,224,224]
+        x = self.conv_1(input)# x[b,64,224,224]
+        x = self.pool1(x) # x[b,64,32,32]
+        x = self.conv_2(x)# x[b,128,32,32]
+        x = self.pool2(x)# x[b,128,4,4]
+        x = self.conv_3(x)#x[b,16,4,4]
+        x = x.reshape(x.shape[0],x.shape[1],-1)#x[b,16,16]
+
+        return x
             

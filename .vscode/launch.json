@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python 调试程序: 当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "30%BTCV",
             "type": "debugpy",
             "request": "launch",
@@ -13,56 +20,63 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--labelnum","5",
-                "--batch_size","2",
-                "--labeled_bs","1",
-                "--root_path","/media/icml/H4T/DATASET/btcv_h5"
-            ],// python train_main_btcv.py --labelnum 5 --root_path /home/grozta/Desktop/DATASET/btcv_h5/ --labeled_bs 1 --batch_size 2
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--labelnum",
+                "5",
+                "--batch_size",
+                "2",
+                "--labeled_bs",
+                "1",
+                "--root_path",
+                "/media/icml/H4T/DATASET/btcv_h5"
+            ], // python train_main_btcv.py --labelnum 5 --root_path /home/grozta/Desktop/DATASET/btcv_h5/ --labeled_bs 1 --batch_size 2
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "40%BTCV",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/code/train_main_btcv.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/code",
-            "args": ["--labelnum","7",],
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            "args": [
+                "--labelnum",
+                "7",
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "10%MACT",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/code/train_main_mact.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/code",
-            "args": ["--labelnum","7",],
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            "args": [
+                "--labelnum",
+                "7",
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "20%MACT",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/code/train_main_mact.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/code",
-            "args": ["--labelnum","13",],
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
-            "name": "10%ACDC_Semi-Mamba-UNet",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/code/train_Semi_Mamba_UNet.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/code",
-            "justMyCode": false,
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/Semi_Mamba_UNet",
-                "--max_iterations","30000",
-                "--labeled_num","7",
-                "--batch_size","10",
-                "--labeled_bs","5",
-            ],// python train_Semi_Mamba_UNet.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 7 --batch_size 10 --labeled_bs 5
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
+                "--labelnum",
+                "13",
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
         },
         {
             "name": "10%ACDC_Semi-Mamba-UNet",
@@ -73,15 +87,48 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-            
-                "--exp","ACDC/Semi_Mamba_UNet",
-                "--max_iterations","30000",
-                "--labeled_num","7",
-                "--batch_size","10",
-                "--labeled_bs","5",
-            ],// python train_Semi_Mamba_UNet.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 7 --batch_size 10 --labeled_bs 5
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/Semi_Mamba_UNet",
+                "--max_iterations",
+                "30000",
+                "--labeled_num",
+                "7",
+                "--batch_size",
+                "10",
+                "--labeled_bs",
+                "5",
+            ], // python train_Semi_Mamba_UNet.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 7 --batch_size 10 --labeled_bs 5
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
+            "name": "10%ACDC_Semi-Mamba-UNet",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_Semi_Mamba_UNet.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--exp",
+                "ACDC/Semi_Mamba_UNet",
+                "--max_iterations",
+                "30000",
+                "--labeled_num",
+                "7",
+                "--batch_size",
+                "10",
+                "--labeled_bs",
+                "5",
+            ], // python train_Semi_Mamba_UNet.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/Semi_Mamba_UNet --max_iterations 30000 --labeled_num 7 --batch_size 10 --labeled_bs 5
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "fully_supervised_2D_ViT",
             "type": "debugpy",
             "request": "launch",
@@ -90,15 +137,24 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp", "ACDC/swinunet",
-                "--max_iterations","10000",
-                "--model", "swinunet",
-                "--seed", "5179",
-                "--batch_size","18"
-            ],// python -u train_fully_supervised_2D_ViT.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/swinunet --model swinunet --max_iterations 10000 --batch_size 18 --seed 5179
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--root_path",
+                "/home/grozta/Desktop/DATASET/ACDC",
+                "--exp",
+                "ACDC/swinunet",
+                "--max_iterations",
+                "10000",
+                "--model",
+                "swinunet",
+                "--seed",
+                "5179",
+                "--batch_size",
+                "18"
+            ], // python -u train_fully_supervised_2D_ViT.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/swinunet --model swinunet --max_iterations 10000 --batch_size 18 --seed 5179
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "fully_supervised_2D_VIM",
             "type": "debugpy",
             "request": "launch",
@@ -107,15 +163,24 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp", "ACDC/VIM_Test",
-                "--max_iterations","10000",
-                "--model", "mambaunet",
-                "--seed", "5179",
-                "--batch_size","18"
-            ],// python train_fully_supervised_2D_VIM.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/VIM --model mambaunet --max_iterations 10000 --batch_size 18
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--root_path",
+                "/home/grozta/Desktop/DATASET/ACDC",
+                "--exp",
+                "ACDC/VIM_Test",
+                "--max_iterations",
+                "10000",
+                "--model",
+                "mambaunet",
+                "--seed",
+                "5179",
+                "--batch_size",
+                "18"
+            ], // python train_fully_supervised_2D_VIM.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/VIM --model mambaunet --max_iterations 10000 --batch_size 18
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "10%ACDC_Magic_2D",
             "type": "debugpy",
             "request": "launch",
@@ -124,13 +189,19 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_MagicNet_2D",
-                "--is_save_more_log", "--is_save_checkpoint",
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/train_Semi_MagicNet_2D",
+                "--is_save_more_log",
+                "--is_save_checkpoint",
                 //"--resume"
-            ],// python train_Semi_MagicNet_2D.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            ], // python train_Semi_MagicNet_2D.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "test",
             "type": "debugpy",
             "request": "launch",
@@ -139,10 +210,14 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-            ],// python train_Semi_MagicNet_2D.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--root_path",
+                "/home/grozta/Desktop/DATASET/ACDC",
+            ], // python train_Semi_MagicNet_2D.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D --is_save_more_log --is_save_checkpoint
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "10%ACDC_Magic_2D_mask",
             "type": "debugpy",
             "request": "launch",
@@ -151,16 +226,25 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_MagicNet_2D_mask_test",
-                "--labeled_bs","6", 
-                "--batch_size","12",
-                "--max_iterations","40000",
-                "--is_save_more_log", "--is_save_checkpoint"
+                "--root_path",
+                "/home/grozta/Desktop/DATASET/ACDC",
+                "--exp",
+                "ACDC/train_Semi_MagicNet_2D_mask_test",
+                "--labeled_bs",
+                "6",
+                "--batch_size",
+                "12",
+                "--max_iterations",
+                "40000",
+                "--is_save_more_log",
+                "--is_save_checkpoint"
                 //"--resume"
-            ],// python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D_mask --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            ], // python train_Semi_MagicNet_2D_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_MagicNet_2D_mask --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "ACDC_Magic_2D_mask_pretrain",
             "type": "debugpy",
             "request": "launch",
@@ -169,16 +253,24 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/MagicNet_2D_mask_pretain",
-                "--batch_size","8",
-                "--max_iterations","70000",
-                "--is_save_more_log", "--is_save_checkpoint",
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/MagicNet_2D_mask_pretain",
+                "--batch_size",
+                "8",
+                "--max_iterations",
+                "70000",
+                "--is_save_more_log",
+                "--is_save_checkpoint",
                 "--resume"
                 //"--resume"
-            ],// python train_Semi_MagicNet_2D_mask_pretrain.py --resume --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/MagicNet_2D_mask_pretain --batch_size 8 --max_iterations 70000 --is_save_more_log --is_save_checkpoint
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            ], // python train_Semi_MagicNet_2D_mask_pretrain.py --resume --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/MagicNet_2D_mask_pretain --batch_size 8 --max_iterations 70000 --is_save_more_log --is_save_checkpoint
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "10%ACDC_Magic_2D_mask_with_pretrain",
             "type": "debugpy",
             "request": "launch",
@@ -187,16 +279,25 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_MagicNet_2D_mask_with_pretrain",
-                "pretrain_path","",
-                "--labeled_bs","4", 
-                "--batch_size","8",
-                "--is_save_more_log", "--is_save_checkpoint"
+                "--root_path",
+                "/home/grozta/Desktop/DATASET/ACDC",
+                "--exp",
+                "ACDC/train_Semi_MagicNet_2D_mask_with_pretrain",
+                "pretrain_path",
+                "",
+                "--labeled_bs",
+                "4",
+                "--batch_size",
+                "8",
+                "--is_save_more_log",
+                "--is_save_checkpoint"
                 //"--resume"
-            ],// python train_Semi_MagicNet_2D_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/MagicNet_2D_mask_with_pretrain --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint --pretrain_path /media/icml/H4T/laboratory/FrameWork/Mamba-UNet/code/pretrained_ckpt/MagicNet_2D_mask_pretrain.pth
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+            ], // python train_Semi_MagicNet_2D_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/MagicNet_2D_mask_with_pretrain --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint --pretrain_path /media/icml/H4T/laboratory/FrameWork/Mamba-UNet/code/pretrained_ckpt/MagicNet_2D_mask_pretrain.pth
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "10%ACDC_Manba_2D_mask",
             "type": "debugpy",
             "request": "launch",
@@ -205,15 +306,24 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_Mamba_2D_mask",
-                "pretrain_path","../pretrained_ckpt/Manba_2D_mask_pretrain.pth",
-                "--labeled_bs","4", 
-                "--batch_size","8",
-                "--is_save_more_log", "--is_save_checkpoint"
-            ],// python train_Semi_Mamba_2D_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Semi_Manba_mask_2D --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
-            "env": {"CUDA_VISIBLE_DEVICES":"0",}
-        },{
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/train_Semi_Mamba_2D_mask",
+                "pretrain_path",
+                "../pretrained_ckpt/Manba_2D_mask_pretrain.pth",
+                "--labeled_bs",
+                "4",
+                "--batch_size",
+                "8",
+                "--is_save_more_log",
+                "--is_save_checkpoint"
+            ], // python train_Semi_Mamba_2D_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Semi_Manba_mask_2D --batch_size 8 --labeled_bs 4 --is_save_more_log --is_save_checkpoint
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
             "name": "3DViM_2D",
             "type": "debugpy",
             "request": "launch",
@@ -221,32 +331,46 @@
             "program": "${workspaceFolder}/code/train_Semi_Mamba_Contrastive_Consistency.py",
             "console": "integratedTerminal",
             "args": [
-                "--root_path","/media/icml/H4T/DATASET/ACDC",
-                "--exp","ACDC/train_Contrastive_Consistency_ViM_2D_weight7",
-                "--num_classes","4",
-                "--labeled_num","7",
-                "--batch_size","4",
-                "--labeled_bs","2",
-                "--cfg","../code/configs/vmamba_tiny7.yaml"
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/train_Contrastive_Consistency_ViM_2D_weight7",
+                "--num_classes",
+                "4",
+                "--labeled_num",
+                "7",
+                "--batch_size",
+                "4",
+                "--labeled_bs",
+                "2",
+                "--cfg",
+                "../code/configs/vmamba_tiny7.yaml"
             ],
             //python train_Semi_Mamba_Contrastive_Consistency.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/train_Contrastive_Consistency_ViM_2D_weight7 --num_classes 4 --labeled_num 7 --batch_size 4 --labeled_bs 2 --cfg ../code/configs/vmamba_tiny7.yaml
             "justMyCode": false
-        },{
-            "name": "3DVnet_2D",
+        },
+        {
+            "name": "3DViT_2D_mask",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${workspaceFolder}/code/",
-            "program": "${workspaceFolder}/code/train_Semi_Contrastive_Consistency_vnet.py",
+            "program": "${workspaceFolder}/code/train_Semi_Contrastive_Consistency_mask.py",
             "console": "integratedTerminal",
             "args": [
-                "--root_path","/home/grozta/Desktop/DATASET/ACDC",
-                "--exp","ACDC/train_Semi_Contrastive_Consistency_vnet",
-                "--num_classes","4",
-                "--labeled_num","7",
-                "--batch_size","10",
-                "--labeled_bs","5"
+                "--root_path",
+                "/media/icml/H4T/DATASET/ACDC",
+                "--exp",
+                "ACDC/3DViT_2D_mask",
+                "--num_classes",
+                "4",
+                "--labeled_num",
+                "7",
+                "--batch_size",
+                "5",
+                "--labeled_bs",
+                "3"
             ],
-            //python train_Semi_Contrastive_Consistency_vnet.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/train_Semi_Contrastive_Consistency_vnet --num_classes 4 --labeled_num 7 --batch_size 10 --labeled_bs 5
+            //python train_Semi_Contrastive_Consistency_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/3DViT_2D_mask --num_classes 4 --labeled_num 7 --batch_size 5 --labeled_bs 3
             "justMyCode": false
         }
     ]

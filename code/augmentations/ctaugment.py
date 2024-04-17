@@ -251,3 +251,107 @@ def translate_x(x, delta):
 def translate_y(x, delta):
     delta = (2 * delta - 1) * 0.3
     return x.transform(x.size, Image.AFFINE, (1, 0, 0, 0, 1, delta))
+
+
+def get_grid_shuffle_index(image_shape,grid_blocks=(4,4)):
+    """Split the image into a 4x4 grid of blocks.
+    grid_blocks is counts of image's block
+    
+    Args:
+        image_shape (tensor): [x,y]
+    """
+    x,y = image_shape[-2], image_shape[-1]
+    assert (image_shape[0])%(grid_blocks[0]) == 0 and (image_shape[1])%(grid_blocks[1])==0
+    #get shuffle image
+    block_size = x//(grid_blocks[0]), y//(grid_blocks[1])
+    img_index = torch.arange(x*y).reshape(x,y)
+    shuffle_grid_indices = torch.randperm(grid_blocks[0]*grid_blocks[1])
+    img_index_grid = img_index.view(grid_blocks[0], block_size[0], grid_blocks[1], block_size[1]).permute(0, 2, 1, 3).contiguous().view(-1, block_size[0], block_size[1])
+    img_index_grid_permuted = img_index_grid[shuffle_grid_indices]
+    shuffle_index = img_index_grid_permuted.view(grid_blocks[0],grid_blocks[1],block_size[0], block_size[1]).permute(0, 2, 1, 3).contiguous().view(x,y)
+    return shuffle_index, shuffle_grid_indices
+
+def grid_shuffle_image(image,shuffle_index):
+    """Desc: new grid image from shuffle indexs
+    
+    Note: Deal with single image
+    
+    Args:
+        image (tensor): [b,x,y] or [x,y]
+        shuffle_index (tensor): [x,y]
+    
+    """
+    batch = 1
+    if len(image.shape) >2:
+        batch = image.shape[0]
+
+    flattened_image = image.view(batch, -1)
+    shuffled_image = torch.gather(flattened_image, 1, shuffle_index.view(1, -1).expand_as(flattened_image)).reshape(image.shape)
+    return shuffled_image
+
+def grid_recover_image(image,shuffle_index):
+    """_summary_ 
+    Args:
+        image (tensor): [b,c,x,y]
+        shuffle_index (tensor): [x,y]
+    """
+    b,c,x,y = image.shape
+    flattened_image = image.view(b,c, -1)
+    recover_image = torch.gather(flattened_image, 2, shuffle_index.view(1, -1).argsort().expand_as(flattened_image)).reshape(image.shape)
+    return recover_image
+
+def grid_shuffle_image_inter_index(image,grid_blocks=(4,4)):
+    """
+    Split the image into a 4x4 grid of blocks.
+    grid_blocks is counts of image's block
+    """
+    x,y = image.shape[-2], image.shape[-1]
+    assert (image.shape[0])%(grid_blocks[0]) == 0 and (image.shape[1])%(grid_blocks[1])==0
+    #get shuffle image
+    block_size = x//(grid_blocks[0]), y//(grid_blocks[1])
+    image_grid = image.view(grid_blocks[0], block_size[0], grid_blocks[1], block_size[1]).permute(0, 2, 1, 3).contiguous().view(-1, block_size[0], block_size[1])
+    #get shuffle image index
+    shuffle_index, shuffle_grid_indices = get_grid_shuffle_index((x,y)),grid_blocks
+    grid_permuted = image_grid[shuffle_grid_indices]
+    shuffle_grid_img = grid_permuted.view(grid_blocks[0],grid_blocks[1],block_size[0], block_size[1]).permute(0, 2, 1, 3).contiguous().view(x,y)
+    
+    return shuffle_grid_img,shuffle_grid_indices.reshape(grid_blocks),shuffle_index
+
+def grid_recover_image_inter_index(image,shuffle_index):
+    grid_blocks = shuffle_index.shape
+    assert (image.shape[0])%(grid_blocks[0]) == 0 and (image.shape[1])%(grid_blocks[1])==0
+    block_size = (image.shape[0])//(grid_blocks[0]), (image.shape[1])//(grid_blocks[1])
+    image_grid = image.view(grid_blocks[0], block_size[0], grid_blocks[1], block_size[1]).permute(0, 2, 1, 3).contiguous().view(-1, block_size[0], block_size[1])
+    recover_indices = shuffle_index.reshape(-1,1).squeeze(1)
+    grid_permuted = image_grid[recover_indices.argsort()]
+    recover_img = grid_permuted.view(grid_blocks[0],grid_blocks[1],block_size[0], block_size[1]).permute(0, 2, 1, 3).contiguous().view(image.shape)
+    return recover_img
+    
+    
+if __name__ == "__main__":
+    is_use_inter_index = False
+    image_shape = (4,4)
+    grid_shape = (2,2)
+    x = torch.arange(image_shape[0]*image_shape[1]).reshape(image_shape)
+    if  is_use_inter_index:
+        print(f"x:{x}")
+        img,grid_index,indexs = grid_shuffle_image_inter_index(x,grid_shape)
+        print(f"indexs:{indexs}")
+        print(f"img:{img}")
+        y = grid_recover_image_inter_index(img,grid_index)
+        print(f"y:{y}") 
+    else:
+        x1 = torch.arange(10,image_shape[0]*image_shape[1]+10).reshape(image_shape)
+        x2 = x
+        ori_img = torch.stack([x1.repeat(2,1,1),x2.repeat(2,1,1)])
+        print(ori_img)
+        s_indexs,_ = get_grid_shuffle_index(x.shape,(2,2))
+        print(s_indexs)
+        s_x1 = grid_shuffle_image(x1,s_indexs)
+        s_x2 = grid_shuffle_image(x2,s_indexs)
+        img1 = s_x1.repeat(2,1,1)
+        img2 = s_x2.repeat(2,1,1)
+        out_img = torch.stack([img1,img2])
+        print(out_img)
+        recover_img = grid_recover_image(out_img,s_indexs)
+        print(recover_img)

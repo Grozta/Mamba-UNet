@@ -270,7 +270,7 @@ class CTATransform(object):
         label_aug = augmentations.cta_apply(transforms.ToPILImage()(label), ops_weak)
         label_aug = to_tensor(label_aug).squeeze(0)
         label_aug = torch.round(255 * label_aug).int()
-
+        
         sample["image"] = image
         sample["label"] = label
         sample["image_weak"] = to_tensor(image_weak)

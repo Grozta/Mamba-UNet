@@ -357,20 +357,16 @@
             "program": "${workspaceFolder}/code/train_Semi_Contrastive_Consistency_mask.py",
             "console": "integratedTerminal",
             "args": [
-                "--root_path",
-                "/home/grozta/Desktop/DATASET/ACDC",
-                "--exp",
-                "ACDC/3DViT_2D_mask",
-                "--num_classes",
-                "4",
-                "--labeled_num",
-                "7",
-                "--batch_size",
-                "5",
-                "--labeled_bs",
-                "3"
+                "--root_path", "/media/icml/H4T/DATASET/ACDC",
+                "--exp", "ACDC/3DViT_2D_mask",
+                "--num_classes", "4",
+                "--labeled_num", "7",
+                "--batch_size", "5",
+                "--labeled_bs", "3",
+                "--max_iterations", "48000",
+                "--tag","v0.1"
             ],
-            //python train_Semi_Contrastive_Consistency_mask.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/3DViT_2D_mask_Jigsaw_cls --num_classes 4 --labeled_num 7 --batch_size 5 --labeled_bs 3
+            // python train_Semi_Contrastive_Consistency_mask.py --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/3DViT_2D_mask --tag v0.1 --num_classes 4 --labeled_num 7 --batch_size 5 --labeled_bs 3 --max_iterations 48000
             "justMyCode": false
         }
     ]

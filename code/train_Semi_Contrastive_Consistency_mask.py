@@ -59,6 +59,8 @@ parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
                     default='ACDC/Cross_teaching_min_max', help='experiment_name')
+parser.add_argument('--tag',type=str,
+                    default='v0.1', help='tag of experiment')
 parser.add_argument('--model', type=str,
                     default='ViT_Seg', help='model_name')
 parser.add_argument('--max_iterations', type=int,
@@ -67,7 +69,7 @@ parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
-parser.add_argument('--base_lr', type=float,  default=0.01,
+parser.add_argument('--base_lr', type=float,  default=0.001,
                     help='segmentation network learning rate')
 parser.add_argument('--patch_size', type=list,  default=[224, 224],
                     help='patch size of network input')
@@ -75,7 +77,7 @@ parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 
-parser.add_argument("--load", default=True, action="store_true", help="restore previous checkpoint")
+parser.add_argument("--resume", default=True, action="store_true", help="resume from latest checkpoint")
 parser.add_argument(
     "--conf_thresh",
     type=float,
@@ -115,14 +117,12 @@ parser.add_argument('--cache-mode', type=str, default='part', choices=['no', 'fu
                     help='no: no cache, '
                     'full: cache all data, '
                     'part: sharding the dataset into nonoverlapping pieces and only cache one piece')
-parser.add_argument('--resume', help='resume from checkpoint')
 parser.add_argument('--accumulation-steps', type=int,
                     help="gradient accumulation steps")
 parser.add_argument('--use-checkpoint', action='store_true',
                     help="whether to use gradient checkpointing to save memory")
 parser.add_argument('--amp-opt-level', type=str, default='O1', choices=['O0', 'O1', 'O2'],
                     help='mixed precision opt level, if O0, no amp is used')
-parser.add_argument('--tag', help='tag of experiment')
 parser.add_argument('--eval', action='store_true',
                     help='Perform evaluation only')
 parser.add_argument('--throughput', action='store_true',
@@ -187,7 +187,7 @@ def train(args, snapshot_path):
     projector_2 = create_model('projector',ema=True)
     projector_3 = create_model('projector')
     projector_4 = create_model('projector')
-    Jigsaw_classifier = create_model('Jigsaw_classifier')
+    #Jigsaw_classifier = create_model('Jigsaw_classifier')
     
     """
     Output model calculation amount and parameter amount
@@ -307,58 +307,23 @@ def train(args, snapshot_path):
     optimizer2 = optim.SGD(model2.parameters(), lr=base_lr,
                            momentum=0.9, weight_decay=0.0001)
     
-
     iter_num = 0
     start_epoch = 0
+    best_performance1 = 0.0
+    best_performance2 = 0.0
     # if restoring previous models:
-    if args.load:
+    if args.resume:
+        model_checkpoint1 = "model1_latest.pth"    
+        model_checkpoint2 = "model2_latest.pth"
         try:
-            # check if there is previous progress to be restored:
-            logging.info(f"Snapshot path: {snapshot_path}")
-            iter_num = []
-            for filename in os.listdir(snapshot_path):
-                if "model1_iter" in filename:
-                    basename, extension = os.path.splitext(filename)
-                    iter_num.append(int(basename.split("_")[2]))
-            iter_num = max(iter_num)
-            for filename in os.listdir(snapshot_path):
-                if "model1_iter" in filename and str(iter_num) in filename:
-                    model_checkpoint = filename
-        except Exception as e:
-            logging.warning(f"Error finding previous checkpoints: {e}")
-
-        try:
-            logging.info(f"Restoring model checkpoint: {model_checkpoint}")
-            model1, optimizer1, projector_1, projector_3, cta, start_epoch, best_performance1 = util.load_checkpoint_4_2C(
-                snapshot_path + "/" + model_checkpoint, model1, optimizer1,projector_1,projector_3,cta,
-            )
+            logging.info(f"Restoring model checkpoint: {model_checkpoint1}")
+            start_epoch, iter_num, best_performance1 = util.load_checkpoint_4_2C(
+                snapshot_path + "/" + model_checkpoint1, model1, optimizer1,projector_1,projector_3)
+            logging.info(f"Restoring model checkpoint: {model_checkpoint2}")
+            start_epoch, iter_num, best_performance2 = util.load_checkpoint_4_2C(
+                snapshot_path + "/" + model_checkpoint2, model2, optimizer2,projector_2,projector_4)
             logging.info(f"Models restored from iteration {iter_num}")
         except Exception as e:
-            iter_num = 0
-            logging.warning(f"Unable to restore model checkpoint: {e}, using new model")
-        try:
-            # check if there is previous progress to be restored:
-            logging.info(f"Snapshot path: {snapshot_path}")
-            iter_num = []
-            for filename in os.listdir(snapshot_path):
-                if "model2_iter" in filename:
-                    basename, extension = os.path.splitext(filename)
-                    iter_num.append(int(basename.split("_")[2]))
-            iter_num = max(iter_num)
-            for filename in os.listdir(snapshot_path):
-                if "model2_iter" in filename and str(iter_num) in filename:
-                    model_checkpoint = filename
-        except Exception as e:
-            logging.warning(f"Error finding previous checkpoints: {e}")
-
-        try:
-            logging.info(f"Restoring model checkpoint: {model_checkpoint}")
-            model2, optimizer2, projector_2, projector_4, cta, start_epoch, best_performance2 = util.load_checkpoint_4_2C(
-                snapshot_path + "/" + model_checkpoint, model2, optimizer2,projector_2,projector_4,cta,
-            )
-            logging.info(f"Models restored from iteration {iter_num}")
-        except Exception as e:
-            iter_num = 0
             logging.warning(f"Unable to restore model checkpoint: {e}, using new model")
     ce_loss = CrossEntropyLoss()
     mes_loss = nn.MSELoss()
@@ -373,8 +338,7 @@ def train(args, snapshot_path):
     
     
     max_epoch = max_iterations // len(trainloader) + 1
-    best_performance1 = 0.0
-    best_performance2 = 0.0
+
     lr_ = base_lr
     iterator = tqdm(range(start_epoch, max_epoch), ncols=70)
     for epoch_num in iterator:
@@ -437,12 +401,12 @@ def train(args, snapshot_path):
             outputs_raw1 = model1(raw_batch)
             outputs_Jigsaw1 = model1(Jigsaw_batch)
             recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
-            outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
+            #outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
             
             outputs_raw2 = model2(raw_batch)
             outputs_Jigsaw2 = model2(Jigsaw_batch)
             recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
-            outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
+            #outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
             
             #######################strong weak Augment#############
             outputs_weak1 = model1(weak_batch)
@@ -555,15 +519,15 @@ def train(args, snapshot_path):
             ##############Jigsaw_loss##################
             Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
             Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
-            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)*25
+            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)
             
-            Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
-            Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
-            Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
+            # Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
+            # Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
+            # Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
 
             loss = sup_loss + consistency_weight1 * Loss_contrast_l + \
             consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u +\
-                Jigsaw_loss +Jigsaw_cls_loss
+                Jigsaw_loss #+Jigsaw_cls_loss
 #             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
 
             
@@ -606,9 +570,9 @@ def train(args, snapshot_path):
                                        "Jigsaw_loss1":Jigsaw1_loss,
                                        "Jigsaw_loss2":Jigsaw1_loss}, iter_num)
             
-            writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
-                                       "Jigsaw_cls1_loss":Jigsaw_cls1_loss,
-                                       "Jigsaw_cls2_loss":Jigsaw_cls2_loss}, iter_num)
+            # writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
+            #                            "Jigsaw_cls1_loss":Jigsaw_cls1_loss,
+            #                            "Jigsaw_cls2_loss":Jigsaw_cls2_loss}, iter_num)
             
             writer.add_scalars("Train/consistency",{"consistency_weight1":consistency_weight1,
                                        "consistency_weight2":consistency_weight2,
@@ -678,8 +642,8 @@ def train(args, snapshot_path):
 
                         # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_mode_path)
                         # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_best)
-                        util.save_checkpoint_4_2C(epoch_num, model1, optimizer1, projector_1, projector_3, cta, best_performance1, save_mode_path)
-                        util.save_checkpoint_4_2C(epoch_num, model1, optimizer1, projector_1, projector_3, cta, best_performance1, save_best)
+                        util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_mode_path)
+                        util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_best)
 
                 logging.info(
                     'iteration %d : model1_mean_dice : %f model1_mean_hd95 : %f' % (iter_num, performance1, mean_hd951))
@@ -716,8 +680,8 @@ def train(args, snapshot_path):
 
                         # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_mode_path)
                         # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_best)
-                        util.save_checkpoint_4_2C(epoch_num, model2, optimizer2, projector_2, projector_4, cta, best_performance2, save_mode_path)
-                        util.save_checkpoint_4_2C(epoch_num, model2, optimizer2, projector_2, projector_4, cta, best_performance2, save_best)
+                        util.save_checkpoint_4_2C(epoch_num, iter_num, model2, optimizer2, projector_2, projector_4, best_performance2, save_mode_path)
+                        util.save_checkpoint_4_2C(epoch_num, iter_num,model2, optimizer2, projector_2, projector_4, best_performance2, save_best)
 
                 logging.info(
                     'iteration %d : model2_mean_dice : %f model2_mean_hd95 : %f' % (iter_num, performance2, mean_hd952))
@@ -729,13 +693,13 @@ def train(args, snapshot_path):
                 save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
                 # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_mode_path)
-                util.save_checkpoint_4_2C(epoch_num, model1, optimizer1, projector_1, projector_3, cta, best_performance1, save_mode_path)
+                util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_mode_path)
                 logging.info("save model1 to {}".format(save_mode_path))
 
                 save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
                 # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_mode_path)
-                util.save_checkpoint_4_2C(epoch_num, model2, optimizer2, projector_2, projector_4, cta, best_performance2, save_mode_path)
+                util.save_checkpoint_4_2C(epoch_num,iter_num,model2, optimizer2, projector_2, projector_4, best_performance2, save_mode_path)
                 logging.info("save model2 to {}".format(save_mode_path))
 
             if iter_num >= max_iterations:
@@ -803,7 +767,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "../model/{}_{}_labeled/{}".format(args.exp, args.labeled_num, args.model)
+    snapshot_path = "../model/{}_{}_labeled/{}_{}".format(args.exp, args.labeled_num, args.model,args.tag)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):

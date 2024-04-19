@@ -71,6 +71,8 @@ parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
+parser.add_argument('--lr_delter', type=float,  default=0.79,
+                    help='segmentation network learning rate')
 parser.add_argument('--patch_size', type=list,  default=[224, 224],
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
@@ -398,14 +400,14 @@ def train(args, snapshot_path):
 #################################################################################################################################
             # outputs for model
             ########################Jigsaw puzzles#################
-            outputs_raw1 = model1(raw_batch)
-            outputs_Jigsaw1 = model1(Jigsaw_batch)
-            recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
+            #outputs_raw1 = model1(raw_batch)
+            #outputs_Jigsaw1 = model1(Jigsaw_batch)
+            #recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
             #outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
             
-            outputs_raw2 = model2(raw_batch)
-            outputs_Jigsaw2 = model2(Jigsaw_batch)
-            recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
+            #outputs_raw2 = model2(raw_batch)
+            #outputs_Jigsaw2 = model2(Jigsaw_batch)
+            #recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
             #outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
             
             #######################strong weak Augment#############
@@ -517,17 +519,18 @@ def train(args, snapshot_path):
             #both
 #             loss = sup_loss + consistency_weight1 * (Loss_contrast_l + unsup_loss + consistency_weight2 *  Loss_contrast_u)
             ##############Jigsaw_loss##################
-            Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
-            Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
-            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)
+            # Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
+            # Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
+            # Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)/2
             
             # Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
             # Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
             # Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
 
             loss = sup_loss + consistency_weight1 * Loss_contrast_l + \
-            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u +\
-                Jigsaw_loss #+Jigsaw_cls_loss
+            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u# +\
+                #Jigsaw_cls_loss# +Jigsaw_loss
+                
 #             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
 
             
@@ -551,7 +554,7 @@ def train(args, snapshot_path):
             # track batch-level error, used to update augmentation policy
             epoch_errors.append(0.5 * loss.item())
             
-            lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
+            lr_ = base_lr * (1.0 - iter_num / max_iterations) ** args.lr_delter
             for param_group in optimizer1.param_groups:
                 param_group['lr'] = lr_
             for param_group in optimizer2.param_groups:
@@ -566,9 +569,9 @@ def train(args, snapshot_path):
                                        "consistency_weight2 * Loss_contrast_u":consistency_weight2 * Loss_contrast_u
                                        }, iter_num)
             
-            writer.add_scalars("Train/Jigsaw_recovery_loss",{"Jigsaw_loss":Jigsaw_loss,
-                                       "Jigsaw_loss1":Jigsaw1_loss,
-                                       "Jigsaw_loss2":Jigsaw1_loss}, iter_num)
+            # writer.add_scalars("Train/Jigsaw_recovery_loss",{"Jigsaw_loss":Jigsaw_loss,
+            #                            "Jigsaw_loss1":Jigsaw1_loss,
+            #                            "Jigsaw_loss2":Jigsaw1_loss}, iter_num)
             
             # writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
             #                            "Jigsaw_cls1_loss":Jigsaw_cls1_loss,

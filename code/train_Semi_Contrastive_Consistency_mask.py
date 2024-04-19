@@ -60,7 +60,7 @@ parser.add_argument('--root_path', type=str,
 parser.add_argument('--exp', type=str,
                     default='ACDC/Cross_teaching_min_max', help='experiment_name')
 parser.add_argument('--tag',type=str,
-                    default='v0.1', help='tag of experiment')
+                    default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
                     default='ViT_Seg', help='model_name')
 parser.add_argument('--max_iterations', type=int,
@@ -345,10 +345,10 @@ def train(args, snapshot_path):
     iterator = tqdm(range(start_epoch, max_epoch), ncols=70)
     for epoch_num in iterator:
         epoch_errors = []
-        if iter_num <= 10000:
+        if iter_num <= max_iterations//3:
             random_depth_weak = np.random.randint(3,high=5)
             random_depth_strong = np.random.randint(2,high=5)
-        elif iter_num >= 20000:
+        elif iter_num >= max_iterations//3 * 2:
             random_depth_weak = 2
             random_depth_strong = 2
         else:
@@ -399,15 +399,16 @@ def train(args, snapshot_path):
             Jigsaw_batch,shuffle_img_index,shuffle_grid_index = (Jigsaw_img.cuda(),shuffle_img_index.cuda(),shuffle_grid_index.cuda())
 #################################################################################################################################
             # outputs for model
+            shffle_input = torch.cat((raw_batch,Jigsaw_batch))
             ########################Jigsaw puzzles#################
-            #outputs_raw1 = model1(raw_batch)
-            #outputs_Jigsaw1 = model1(Jigsaw_batch)
-            #recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
+            shffle_out1 = model1(shffle_input)
+            outputs_raw1,outputs_Jigsaw1 = torch.split(shffle_out1,split_size_or_sections=raw_batch.shape[0], dim=0)
+            recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
             #outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
-            
-            #outputs_raw2 = model2(raw_batch)
-            #outputs_Jigsaw2 = model2(Jigsaw_batch)
-            #recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
+
+            shffle_out2 = model1(shffle_input)
+            outputs_raw2,outputs_Jigsaw2 = torch.split(shffle_out2,split_size_or_sections=raw_batch.shape[0], dim=0)
+            recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
             #outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
             
             #######################strong weak Augment#############
@@ -519,17 +520,17 @@ def train(args, snapshot_path):
             #both
 #             loss = sup_loss + consistency_weight1 * (Loss_contrast_l + unsup_loss + consistency_weight2 *  Loss_contrast_u)
             ##############Jigsaw_loss##################
-            # Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
-            # Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
-            # Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)/2
+            Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
+            Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
+            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)/2
             
             # Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
             # Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
             # Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
 
             loss = sup_loss + consistency_weight1 * Loss_contrast_l + \
-            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u# +\
-                #Jigsaw_cls_loss# +Jigsaw_loss
+            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u +\
+                Jigsaw_loss#Jigsaw_cls_loss# +
                 
 #             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
 

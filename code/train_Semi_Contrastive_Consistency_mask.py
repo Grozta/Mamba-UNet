@@ -434,15 +434,14 @@ def train(args, snapshot_path):
             outputs_weak_soft_masked = (outputs_weak_soft_masked1 + outputs_weak_soft_masked2)/2
             pseudo_outputs = torch.argmax(outputs_weak_soft_masked.detach(), dim=1, keepdim=False)                         
             consistency_weight1 = get_current_consistency_weight(args.consistency1,
-                    iter_num // 150)
+                    iter_num // (max_iterations//args.consistency_rampup))
 #             consistency_weight2 = get_current_consistency_weight(args.consistency2,
 #                     iter_num // 150)
             if iter_num < 0:
                 consistency_weight2 = 0
             else:
                 consistency_weight2 = get_current_consistency_weight(args.consistency2,
-                    iter_num // 150)
-            
+                    iter_num // (max_iterations//args.consistency_rampup))
             # supervised loss
             sup_loss1 = ce_loss(outputs_weak1[: args.labeled_bs], label_batch_aug[:][: args.labeled_bs].long(),) + dice_loss(
                 outputs_weak_soft1[: args.labeled_bs],

@@ -93,6 +93,12 @@ parser.add_argument('--labeled_num', type=int, default=136,
                     help='labeled data')
 # shuffle 
 parser.add_argument('--grid_shape', type=tuple,  default=(4,4), help='shuffle grid_shape')
+parser.add_argument('--consistency_Jigsaw_cls', type=float,
+                    default=1, help='consistency')
+parser.add_argument('--consistency_Jigsaw_recv', type=float, 
+                    default=0.6, help='consistency')
+parser.add_argument('--consistency_Jigsaw_rampup', type=float,
+                    default=240.0, help='consistency_Jigsaw_rampup')
 
 # costs
 parser.add_argument('--ema_decay', type=float,  default=0.999, help='ema_decay')
@@ -189,7 +195,9 @@ def train(args, snapshot_path):
     projector_2 = create_model('projector',ema=True)
     projector_3 = create_model('projector')
     projector_4 = create_model('projector')
-    #Jigsaw_classifier = create_model('Jigsaw_classifier')
+    
+    Jigsaw_classifier1 = create_model('Jigsaw_classifier',ema = True)
+    Jigsaw_classifier2 = create_model('Jigsaw_classifier')
     
     """
     Output model calculation amount and parameter amount
@@ -398,18 +406,17 @@ def train(args, snapshot_path):
             raw_batch = raw_batch.cuda()
             Jigsaw_batch,shuffle_img_index,shuffle_grid_index = (Jigsaw_img.cuda(),shuffle_img_index.cuda(),shuffle_grid_index.cuda())
 #################################################################################################################################
-            # outputs for model
             shffle_input = torch.cat((raw_batch,Jigsaw_batch))
             ########################Jigsaw puzzles#################
             shffle_out1 = model1(shffle_input)
             outputs_raw1,outputs_Jigsaw1 = torch.split(shffle_out1,split_size_or_sections=raw_batch.shape[0], dim=0)
             recover_outputs_Jigsaw1 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw1,shuffle_img_index)
-            #outputs_Jigsaw_cls1 = Jigsaw_classifier(outputs_Jigsaw1)
+            outputs_Jigsaw_cls1 = Jigsaw_classifier1(outputs_Jigsaw1)
 
             shffle_out2 = model1(shffle_input)
             outputs_raw2,outputs_Jigsaw2 = torch.split(shffle_out2,split_size_or_sections=raw_batch.shape[0], dim=0)
             recover_outputs_Jigsaw2 = augmentations.grid_recover_image_for_muti_index(outputs_Jigsaw2,shuffle_img_index)
-            #outputs_Jigsaw_cls2 = Jigsaw_classifier(outputs_Jigsaw2)
+            outputs_Jigsaw_cls2 = Jigsaw_classifier2(outputs_Jigsaw2)
             
             #######################strong weak Augment#############
             outputs_weak1 = model1(weak_batch)
@@ -434,14 +441,17 @@ def train(args, snapshot_path):
             outputs_weak_soft_masked = (outputs_weak_soft_masked1 + outputs_weak_soft_masked2)/2
             pseudo_outputs = torch.argmax(outputs_weak_soft_masked.detach(), dim=1, keepdim=False)                         
             consistency_weight1 = get_current_consistency_weight(args.consistency1,
-                    iter_num // 150)
-#             consistency_weight2 = get_current_consistency_weight(args.consistency2,
-#                     iter_num // 150)
+                    iter_num // (max_iterations//args.consistency_rampup))
+            consistency_Jigsaw_cls_weight = get_current_consistency_weight(args.consistency_Jigsaw_cls,
+                    iter_num // (max_iterations//args.consistency_Jigsaw_rampup))
             if iter_num < 0:
                 consistency_weight2 = 0
+                consistency_Jigsaw_recv_weight = 0
             else:
                 consistency_weight2 = get_current_consistency_weight(args.consistency2,
-                    iter_num // 150)
+                    iter_num // (max_iterations//args.consistency_rampup))
+                consistency_Jigsaw_recv_weight = get_current_consistency_weight(args.consistency_Jigsaw_recv,
+                    iter_num // (max_iterations//args.consistency_Jigsaw_rampup))
             
             # supervised loss
             sup_loss1 = ce_loss(outputs_weak1[: args.labeled_bs], label_batch_aug[:][: args.labeled_bs].long(),) + dice_loss(
@@ -520,21 +530,18 @@ def train(args, snapshot_path):
             #both
 #             loss = sup_loss + consistency_weight1 * (Loss_contrast_l + unsup_loss + consistency_weight2 *  Loss_contrast_u)
             ##############Jigsaw_loss##################
-            Jigsaw1_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
-            Jigsaw2_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
-            Jigsaw_loss = (Jigsaw1_loss+Jigsaw2_loss)/2
+            Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
+            Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
+            Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
             
-            # Jigsaw_cls1_loss = ce_loss(outputs_Jigsaw_cls1,shuffle_grid_index)
-            # Jigsaw_cls2_loss = ce_loss(outputs_Jigsaw_cls2,shuffle_grid_index)
-            # Jigsaw_cls_loss = (Jigsaw_cls1_loss+Jigsaw_cls2_loss)/2
-
+            Jigsaw1_recv_loss = mes_loss(outputs_raw1,recover_outputs_Jigsaw1)
+            Jigsaw2_recv_loss = mes_loss(outputs_raw2,recover_outputs_Jigsaw2)
+            Jigsaw_recv_loss = (Jigsaw1_recv_loss+Jigsaw2_recv_loss)/2
+            ##############Total_loss##################
             loss = sup_loss + consistency_weight1 * Loss_contrast_l + \
-            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u +\
-                Jigsaw_loss#Jigsaw_cls_loss# +
-                
-#             loss = 0.5 * (sup_loss + consistency_weight2 * unsup_loss + consistency_weight2 * contrastive_loss)
-
-            
+            consistency_weight1 * unsup_loss + consistency_weight2 * Loss_contrast_u+\
+                consistency_Jigsaw_cls_weight * Jigsaw_cls_loss + consistency_Jigsaw_recv_weight * Jigsaw_recv_loss
+    
             running_loss += loss
             running_sup_loss += sup_loss
             running_unsup_loss += unsup_loss
@@ -552,6 +559,7 @@ def train(args, snapshot_path):
             optimizer2.step()
             update_ema_variables(projector_3, projector_1, args.ema_decay, iter_num)
             update_ema_variables(projector_4, projector_2, args.ema_decay, iter_num)
+            update_ema_variables(Jigsaw_classifier1, Jigsaw_classifier2, args.ema_decay, iter_num)
             # track batch-level error, used to update augmentation policy
             epoch_errors.append(0.5 * loss.item())
             
@@ -570,13 +578,13 @@ def train(args, snapshot_path):
                                        "consistency_weight2 * Loss_contrast_u":consistency_weight2 * Loss_contrast_u
                                        }, iter_num)
             
-            # writer.add_scalars("Train/Jigsaw_recovery_loss",{"Jigsaw_loss":Jigsaw_loss,
-            #                            "Jigsaw_loss1":Jigsaw1_loss,
-            #                            "Jigsaw_loss2":Jigsaw1_loss}, iter_num)
+            writer.add_scalars("Train/Jigsaw_recovery_loss",{"Jigsaw_loss":Jigsaw_recv_loss,
+                                       "Jigsaw_loss1":Jigsaw1_recv_loss,
+                                       "Jigsaw_loss2":Jigsaw1_recv_loss}, iter_num)
             
-            # writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
-            #                            "Jigsaw_cls1_loss":Jigsaw_cls1_loss,
-            #                            "Jigsaw_cls2_loss":Jigsaw_cls2_loss}, iter_num)
+            writer.add_scalars("Train/Jigsaw_cls_loss",{"Jigsaw_cls_loss":Jigsaw_cls_loss,
+                                       "Jigsaw_cls1_loss":Jigsaw_cls1_loss,
+                                       "Jigsaw_cls2_loss":Jigsaw_cls2_loss}, iter_num)
             
             writer.add_scalars("Train/consistency",{"consistency_weight1":consistency_weight1,
                                        "consistency_weight2":consistency_weight2,
@@ -644,8 +652,6 @@ def train(args, snapshot_path):
                         save_best = os.path.join(snapshot_path,
                                                  '{}_best_model1.pth'.format(args.model))
 
-                        # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_mode_path)
-                        # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_best)
                         util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_mode_path)
                         util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_best)
 
@@ -682,8 +688,6 @@ def train(args, snapshot_path):
                         save_best = os.path.join(snapshot_path,
                                                  '{}_best_model2.pth'.format(args.model))
 
-                        # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_mode_path)
-                        # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_best)
                         util.save_checkpoint_4_2C(epoch_num, iter_num, model2, optimizer2, projector_2, projector_4, best_performance2, save_mode_path)
                         util.save_checkpoint_4_2C(epoch_num, iter_num,model2, optimizer2, projector_2, projector_4, best_performance2, save_best)
 
@@ -696,13 +700,11 @@ def train(args, snapshot_path):
             if iter_num % 3000 == 0:
                 save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
-                # util.save_checkpoint(epoch_num, model1, optimizer1, loss, save_mode_path)
                 util.save_checkpoint_4_2C(epoch_num,iter_num, model1, optimizer1, projector_1, projector_3, best_performance1, save_mode_path)
                 logging.info("save model1 to {}".format(save_mode_path))
 
                 save_mode_path = os.path.join(snapshot_path, 'model1_latest.pth')
 
-                # util.save_checkpoint(epoch_num, model2, optimizer2, loss, save_mode_path)
                 util.save_checkpoint_4_2C(epoch_num,iter_num,model2, optimizer2, projector_2, projector_4, best_performance2, save_mode_path)
                 logging.info("save model2 to {}".format(save_mode_path))
 
@@ -716,7 +718,6 @@ def train(args, snapshot_path):
         epoch_loss = running_loss / len(trainloader)
         epoch_sup_loss = running_sup_loss / len(trainloader)
         epoch_unsup_loss = running_unsup_loss / len(trainloader)
-#         epoch_comple_loss = running_comple_loss / len(trainloader)
         epoch_con_loss = running_con_loss / len(trainloader)
         epoch_con_loss_u = running_con_l_u / len(trainloader)
         epoch_con_loss_l = running_con_l_l / len(trainloader)
@@ -732,13 +733,8 @@ def train(args, snapshot_path):
         logging.info('Train unsup loss: {}'.format(epoch_unsup_loss))
         writer.add_scalar('Train/unsup_loss', epoch_unsup_loss, epoch_num)
         
-#         logging.info('Train comple loss: {}'.format(epoch_comple_loss))
-#         writer.add_scalar('Train/comple_loss', epoch_comple_loss, epoch_num)
-        
         logging.info('Train contrastive loss: {}'.format(epoch_con_loss))
-        writer.add_scalar('Train/contrastive_loss', epoch_con_loss, epoch_num)
-        
-        
+        writer.add_scalar('Train/contrastive_loss', epoch_con_loss, epoch_num) 
         
         logging.info('Train weighted contrastive loss: {}'.format(consistency_weight1 * Loss_contrast_l + consistency_weight2 *  Loss_contrast_u))
         writer.add_scalar('Train/weighted_contrastive_loss', consistency_weight1 * Loss_contrast_l + consistency_weight2 *  Loss_contrast_u, epoch_num)

@@ -590,6 +590,10 @@ def train(args, snapshot_path):
                                        "consistency_weight2":consistency_weight2,
                                        "lr":lr_}, iter_num)
             
+            writer.add_scalars("Train/consistency_Jigsaw",{"consistency_Jigsaw_cls_weight":consistency_Jigsaw_cls_weight,
+                                       "consistency_Jigsaw_recv_weight":consistency_Jigsaw_recv_weight,
+                                       "lr":lr_}, iter_num)
+            
             logging.info("iteration %d : model loss : %f" % (iter_num, loss.item()))
 
             if iter_num % 50 == 0:

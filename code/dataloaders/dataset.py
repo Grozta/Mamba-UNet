@@ -449,7 +449,7 @@ class RandomGeneratorv3(object):
         self.output_size = output_size
         self.num_classes = num_classes
         self.is_train = is_train
-        self.puzzle_mask_exe_rate = 0.0
+        self.puzzle_mask_exe_rate = 0.2
         self.puzzle_mask_mask_rate = 0.25
         self.puzzle_mask_mask_size = (8,8)
         self.puzzle_mask_mask_size_list = [1,1,1,1,2,2,2,4,4,8]
@@ -486,12 +486,16 @@ class RandomGeneratorv3(object):
                 image, label = random_rotate(image, label)
             
             image, label = resize_data(image, label,self.output_size)
-             
-            if random.random() > self.edge_mask_exe_rate:
-                self.gen_mask_param()
+            
+            self.gen_mask_param()
+            
+            rand = random.random()
+            if rand < 0.20:
+                image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+            elif rand < 0.85:
                 image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                
-            if random.random() > self.puzzle_mask_exe_rate:
+            else:
+                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
                 image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
             
             image, label = random_scale_2D(image,label)

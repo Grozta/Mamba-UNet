@@ -73,54 +73,63 @@ class BaseDataSets(Dataset):
         sample["idx"] = idx
         return sample
 
-
-class BTCV(Dataset):
-    """ Synapse Dataset """
-    def __init__(self, image_list, base_dir=None, transform=None):
+class BaseDataSets4v1(Dataset):
+    def __init__(
+        self,
+        base_dir=None,
+        split="train",
+        num=None,
+        transform=None,
+        ops_weak=None,
+        ops_strong=None,
+    ):
         self._base_dir = base_dir
+        self.sample_list = []
+        self.split = split
         self.transform = transform
-        self.image_list = image_list
+        self.ops_weak = ops_weak
+        self.ops_strong = ops_strong
 
-        print("Total {} samples for training".format(len(self.image_list)))
+        assert bool(ops_weak) == bool(
+            ops_strong
+        ), "For using CTAugment learned policies, provide both weak and strong batch augmentation policy"
+
+        if self.split == "train":
+            with open(self._base_dir + "/train_slices.list", "r") as f1:
+                self.sample_list = f1.readlines()
+            self.sample_list = [item.replace("\n", "") for item in self.sample_list]
+
+        elif self.split == "val":
+            with open(self._base_dir + "/val.list", "r") as f:
+                self.sample_list = f.readlines()
+            self.sample_list = [item.replace("\n", "") for item in self.sample_list]
+        if num is not None and self.split == "train":
+            self.sample_list = self.sample_list[:num]
+        print("total {} samples".format(len(self.sample_list)))
 
     def __len__(self):
-        return len(self.image_list)
-
+        return len(self.sample_list)
+    """for label train
+    """
     def __getitem__(self, idx):
-        image_name = self.image_list[idx]
-        # ex: self._base_dir: '../data/MACT_h5'
-        image_path = self._base_dir + '/{}.h5'.format(image_name)
-        h5f = h5py.File(image_path, 'r')
-        image, label = h5f['image'][:], h5f['label'][:]
-        sample = {'image': image, 'label': label}
-        if self.transform:
-            sample = self.transform(sample)
+        case = self.sample_list[idx]
+        if self.split == "train":
+            h5f = h5py.File(self._base_dir + "/data/slices/{}.h5".format(case), "r")
+        else:
+            h5f = h5py.File(self._base_dir + "/data/{}.h5".format(case), "r")
+        image = h5f["image"][:]
+        label = h5f["label"][:]
+        # print(image.shape, label.shape)
+        # print('*'*10)
+        sample = {"image": label.copy(), "label": label}
+        if self.split == "train":
+            if None not in (self.ops_weak, self.ops_strong):
+                sample = self.transform(sample, self.ops_weak, self.ops_strong)
+            else:
+                sample = self.transform(sample)
+            
+        sample["idx"] = idx
         return sample
-
-
-class MACT(Dataset):
-    """ Multi-organ Abdominal CT Reference Standard Segmentations Dataset """
-    def __init__(self, image_list, base_dir=None, transform=None):
-        self._base_dir = base_dir
-        self.transform = transform
-        self.image_list = ['{:0>4}'.format(i + 1) for i in image_list]
-
-        print("Total {} samples for training".format(len(self.image_list)))
-
-    def __len__(self):
-        return len(self.image_list)
-
-    def __getitem__(self, idx):
-        image_name = self.image_list[idx]
-        # ex: self._base_dir: '../data/MACT_h5'
-        image_path = self._base_dir + '/{}.h5'.format(image_name)
-        h5f = h5py.File(image_path, 'r')
-        image, label = h5f['image'][:], h5f['label'][:]
-        sample = {'image': image, 'label': label}
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
-
 
 class RandomCrop(object):
     """
@@ -191,7 +200,97 @@ def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
 
     return  image, label
 
+def resize_data(image, label,output_size=(256, 256)):
+    
+    x, y = image.shape[-2], image.shape[-1]
+    
+    if len(image.shape) == 2:
+        image = zoom(image, (output_size[0] / x, output_size[1] / y), order=0)
+        label = zoom(label, (output_size[0] / x, output_size[1] / y), order=0)      
+        
+    return image, label
 
+def random_mask(image, label, mask_rate=0.25):
+    tensor_ = np.random.rand(image.shape)
+    mask = tensor_[tensor_<mask_rate]
+    image[mask] = 0
+    return  image, label
+
+def random_mask_puzzle(image, label, mask_rate=0.25,mask_size = (8,8)):
+    """Puzzle style add mask
+
+    Args:
+        image (numpy): input image
+        label (numpy): input label(no operate)
+        mask_rate (float, optional): for whole iamge. Defaults to 0.25.
+        mask_size (tuple, optional): mask size. Defaults to (7,7).
+
+    Returns:
+        numpy: image and label 
+    """
+    image = torch.tensor(image)
+    x,y = image.shape
+    grid_size = x//(mask_size[0]), y//(mask_size[0])
+    grid_img =  image.view(grid_size[0], mask_size[0], grid_size[1], mask_size[1]).permute(0, 2, 1, 3).contiguous().view(-1, mask_size[0], mask_size[1])
+    num_zeros = int(grid_img.shape[0] * mask_rate)
+    indices = np.random.choice(range(grid_img.shape[0]), num_zeros, replace=False)
+    grid_img[indices,:,:] = 0
+    image = grid_img.view(grid_size[0],grid_size[1], mask_size[0], mask_size[1]).permute(0, 2, 1, 3).contiguous().view(x,y)
+    return  image.numpy(), label
+
+def random_mask_edge(image, label, mask_rate=0.03,mask_size = (4,4)):
+    """randomly add mask by edge in center position 
+
+    Args:
+        image (numpy): input image
+        label (numpy): input label(no operate)
+        mask_rate (float, optional): only in edge positions. Defaults to 0.03.
+        mask_size (tuple, optional): mask size. Defaults to (4,4) x2.
+
+    Returns:
+        numpy: image and label 
+    """
+    # 检测图像的边缘
+    edges = cv2.Canny(image.astype(np.uint8), 1, 2)
+    num_rows,num_clo = np.where(edges == 255)
+    
+    num_selected_rows = int(len(num_rows) * mask_rate)
+    num_pos = np.arange(0, len(num_rows))
+    selected_indices = np.random.choice(num_pos, num_selected_rows, replace=False)
+    mask_positions = [(num_rows[indice],num_clo[indice]) for indice in selected_indices]
+    
+    for mask_pos in mask_positions:
+        top = max(0, mask_pos[0] - mask_size[1])
+        bottom = min(image.shape[0], mask_pos[0] + mask_size[1])
+        left = max(0, mask_pos[1] - mask_size[0])
+        right = min(image.shape[1], mask_pos[1] + mask_size[0])
+        
+        # 将挖掉区域置为 0
+        image[top:bottom, left:right] = 0
+        
+    return image, label
+
+def image2binary(img, error_val = 1e-3, num_classes = 4):
+    # 将标签图像根据类别二值化
+    binary_images = []
+    for i in range(num_classes):
+        binary_image = np.full_like(img,error_val,dtype = np.float32)
+        binary_image[img == i] = 1- error_val
+        binary_images.append(binary_image)
+    binary_images = np.stack(binary_images)
+    return binary_images
+
+def np_soft_max(img):
+    tensor_a = torch.from_numpy(img).unsqueeze(0)
+
+    # 对张量 a 在 dim=1 上进行 softmax
+    softmax_result = torch.nn.functional.softmax(tensor_a, dim=1).squeeze(0)
+
+    # 将结果转换为 NumPy 数组
+    softmax_array = softmax_result.numpy()
+    
+    return softmax_array
+    
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
     def __init__(self, is_2d=False):
@@ -304,9 +403,6 @@ class RandomGenerator(object):
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
-        # ind = random.randrange(0, img.shape[0])
-        # image = img[ind, ...]
-        # label = lab[ind, ...]
         if random.random() > 0.5:
             image, label = random_rot_flip(image, label)
         elif random.random() > 0.5:
@@ -337,6 +433,54 @@ class RandomGeneratorv2(object):
         image, label = random_crop_2D(image,label,self.output_size)
 
         image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.long))
+        sample = {"image": image, "label": label}
+        return sample
+    
+class RandomGeneratorv3(object):
+    """for label train 
+    """
+    def __init__(self, output_size, num_classes = 4,is_train = True):
+        self.output_size = output_size
+        self.num_classes = num_classes
+        self.is_train = is_train
+        self.randam_puzzle_mask_exe_rate = 0.9
+        self.randam_puzzle_mask_mask_rate = 0.25
+        self.randam_puzzle_mask_mask_size = (8,8)
+        
+        self.randam_edge_mask_exe_rate = 0.3
+        self.randam_edge_mask_mask_rate = 0.03
+        self.randam_edge_mask_mask_size = (4,4)
+
+    def __call__(self, sample):
+        image, label = sample["image"], sample["label"]
+        
+        if self.is_train:
+            if random.random() > 0.5:
+                image, label = random_rot_flip(image, label)
+                
+            if random.random() > 0.5:
+                image, label = random_rotate(image, label)
+            
+            image, label = resize_data(image, label,self.output_size)
+                
+            if random.random() > self.randam_edge_mask_exe_rate:
+                image, label = random_mask_edge(image,label,self.randam_edge_mask_mask_rate,self.randam_edge_mask_mask_size)
+                
+            if random.random() > self.randam_puzzle_mask_exe_rate:
+                image, label = random_mask_puzzle(image,label,self.randam_puzzle_mask_mask_rate,self.randam_puzzle_mask_mask_size)
+            
+            image, label = random_scale_2D(image,label)
+
+            image, label = random_crop_2D(image,label,self.output_size)
+        else:
+            image, label = resize_data(image, label,self.output_size)
+        
+        image = image2binary(image,num_classes=self.num_classes)
+        
+        image = np_soft_max(image)
+        
+        image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
         return sample

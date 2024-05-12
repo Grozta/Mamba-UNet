@@ -21,22 +21,26 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from val_2D import test_single_volume, test_single_volume_ds
+from val_2D import test_single_volume, test_single_volume_ds, test_single_volume_for_trainLabel
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--train_label',default=True, 
+                    action="store_true", help="train label mode")
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='ACDC/Fully_Supervised', help='experiment_name')
+                    default='ACDC/Fully_Supervised_TrainLabel', help='experiment_name')
+parser.add_argument('--tag',type=str,
+                    default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
                     default='unet', help='model_name')
+parser.add_argument('--pretrain_path', type=str,
+                    default='../data/pretrain/xxxx.pth', help='pretrain model path')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
-parser.add_argument('--vnet_n_filters', type=int,
-                    default=16, help='vnet_n_filters')
 parser.add_argument('--max_iterations', type=int,
                     default=10000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=24,
@@ -70,20 +74,22 @@ def train(args, snapshot_path):
     max_iterations = args.max_iterations
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
-
-    model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGenerator(args.patch_size)
+    if args.train_label:
+        model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
+    else:
+        model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
+        
+    db_train = BaseDataSets4v1(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
+        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)
     ]))
-    db_val = BaseDataSets(base_dir=args.root_path, split="val")
+    db_val = BaseDataSets4v1(base_dir=args.root_path, split="val")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True,
-                             num_workers=16, pin_memory=True, worker_init_fn=worker_init_fn)
-    valloader = DataLoader(db_val, batch_size=1, shuffle=False,
-                           num_workers=1)
+                             num_workers=8, pin_memory=True,worker_init_fn=worker_init_fn)
+    valloader = DataLoader(db_val, batch_size=1, shuffle=False,num_workers =1)
 
     model.train()
 
@@ -143,7 +149,7 @@ def train(args, snapshot_path):
                 model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume(
+                    metric_i = test_single_volume_for_trainLabel(
                         sampled_batch["image"], sampled_batch["label"], model, classes=num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
@@ -173,7 +179,7 @@ def train(args, snapshot_path):
                     'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
                 model.train()
 
-            if iter_num % 3000 == 0:
+            if iter_num % 4000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)
@@ -201,8 +207,8 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "../model/{}_{}_labeled/{}".format(
-        args.exp, args.labeled_num, args.model)
+    snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
+        args.exp, args.labeled_num, args.model, args.tag)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):

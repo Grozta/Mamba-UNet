@@ -71,7 +71,7 @@ def train(args, snapshot_path):
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
 
-    model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
+    model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes,vnet_n_filters = args.vnet_n_filters)
     db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
         RandomGenerator(args.patch_size)
     ]))

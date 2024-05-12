@@ -8,6 +8,7 @@ from medpy import metric
 from scipy.ndimage import zoom
 from torch.utils.data import DataLoader
 import argparse
+from dataloaders.dataset import image2binary, np_soft_max
 from dataloaders.dataset import *
 from networks.magicnet_2D import VNet_Magic_2D
 from networks.magicnet_2D_mask import VNet_Magic_2D_mask
@@ -33,6 +34,31 @@ def test_single_volume(image, label, net, classes, patch_size=[256, 256]):
         slice = zoom(slice, (patch_size[0] / x, patch_size[1] / y), order=0)
         input = torch.from_numpy(slice).unsqueeze(
             0).unsqueeze(0).float().cuda()
+        net.eval()
+        with torch.no_grad():
+            out = torch.argmax(torch.softmax(
+                net(input), dim=1), dim=1).squeeze(0)
+            out = out.cpu().detach().numpy()
+            pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
+            prediction[ind] = pred
+    metric_list = []
+    for i in range(1, classes):
+        metric_list.append(calculate_metric_percase(
+            prediction == i, label == i))
+    return metric_list
+
+def test_single_volume_for_trainLabel(image, label, net, classes, patch_size=[256, 256]):
+    image, label = image.squeeze(0).cpu().detach(
+    ).numpy(), label.squeeze(0).cpu().detach().numpy()
+    prediction = np.zeros_like(label)
+    for ind in range(image.shape[0]):
+        slice = image[ind, :, :]
+        x, y = slice.shape[0], slice.shape[1]
+        slice = zoom(slice, (patch_size[0] / x, patch_size[1] / y), order=0)
+        slice = image2binary(slice,num_classes=classes)
+        slice = np_soft_max(slice)
+        
+        input = torch.from_numpy(slice).unsqueeze(0).float().cuda()
         net.eval()
         with torch.no_grad():
             out = torch.argmax(torch.softmax(

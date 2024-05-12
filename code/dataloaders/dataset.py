@@ -238,7 +238,7 @@ def random_mask_puzzle(image, label, mask_rate=0.25,mask_size = (8,8)):
     image = grid_img.view(grid_size[0],grid_size[1], mask_size[0], mask_size[1]).permute(0, 2, 1, 3).contiguous().view(x,y)
     return  image.numpy(), label
 
-def random_mask_edge(image, label, mask_rate=0.03,mask_size = (4,4)):
+def random_mask_edge(image, label, mask_rate=0.03,mask_size = (4,4),mask_val = -1):
     """randomly add mask by edge in center position 
 
     Args:
@@ -250,7 +250,7 @@ def random_mask_edge(image, label, mask_rate=0.03,mask_size = (4,4)):
     Returns:
         numpy: image and label 
     """
-    # 检测图像的边缘
+    # Detect edges of images
     edges = cv2.Canny(image.astype(np.uint8), 1, 2)
     num_rows,num_clo = np.where(edges == 255)
     
@@ -264,14 +264,19 @@ def random_mask_edge(image, label, mask_rate=0.03,mask_size = (4,4)):
         bottom = min(image.shape[0], mask_pos[0] + mask_size[1])
         left = max(0, mask_pos[1] - mask_size[0])
         right = min(image.shape[1], mask_pos[1] + mask_size[0])
-        
-        # 将挖掉区域置为 0
-        image[top:bottom, left:right] = 0
+        # Pick a value at random in the neighborhood
+        if mask_val < 0:
+            il = np.unique(image[top:bottom, left:right])
+            mask_val_real = np.random.choice(image[top:bottom, left:right].flatten())
+            image[top:bottom, left:right] = mask_val_real
+        # Set the mask area to mask_val
+        else:
+            image[top:bottom, left:right] = mask_val
         
     return image, label
 
 def image2binary(img, error_val = 1e-3, num_classes = 4):
-    # 将标签图像根据类别二值化
+    # Binarize label images according to categories
     binary_images = []
     for i in range(num_classes):
         binary_image = np.full_like(img,error_val,dtype = np.float32)
@@ -444,13 +449,27 @@ class RandomGeneratorv3(object):
         self.output_size = output_size
         self.num_classes = num_classes
         self.is_train = is_train
-        self.randam_puzzle_mask_exe_rate = 0.9
-        self.randam_puzzle_mask_mask_rate = 0.25
-        self.randam_puzzle_mask_mask_size = (8,8)
+        self.puzzle_mask_exe_rate = 0.0
+        self.puzzle_mask_mask_rate = 0.25
+        self.puzzle_mask_mask_size = (8,8)
+        self.puzzle_mask_mask_size_list = [1,2,4,8]
+        self.puzzle_mask_mask_rate_list = [0.25,0.35,0.45,0.55,0.65]
         
-        self.randam_edge_mask_exe_rate = 0.3
-        self.randam_edge_mask_mask_rate = 0.03
-        self.randam_edge_mask_mask_size = (4,4)
+        self.edge_mask_exe_rate = 0.3
+        self.edge_mask_mask_rate = 0.03
+        self.edge_mask_mask_size = (4,4)
+        self.edge_mask_mask_size_list = [1,2,3,4,5,6,7]
+        self.edge_mask_total = (1,4)
+        
+    def gen_mask_param(self):
+        puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
+        self.puzzle_mask_mask_size = (puzzle_mask_mask_size,puzzle_mask_mask_size)
+        self.puzzle_mask_mask_rate = random.choice(self.puzzle_mask_mask_rate_list)
+        
+        total_value = random.uniform(self.edge_mask_total[-2],self.edge_mask_total[-1])
+        edge_mask_mask_size = random.choice(self.edge_mask_mask_size_list)
+        self.edge_mask_mask_size = (edge_mask_mask_size,edge_mask_mask_size)
+        self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
@@ -463,12 +482,13 @@ class RandomGeneratorv3(object):
                 image, label = random_rotate(image, label)
             
             image, label = resize_data(image, label,self.output_size)
+             
+            if random.random() > self.edge_mask_exe_rate:
+                self.gen_mask_param()
+                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size)
                 
-            if random.random() > self.randam_edge_mask_exe_rate:
-                image, label = random_mask_edge(image,label,self.randam_edge_mask_mask_rate,self.randam_edge_mask_mask_size)
-                
-            if random.random() > self.randam_puzzle_mask_exe_rate:
-                image, label = random_mask_puzzle(image,label,self.randam_puzzle_mask_mask_rate,self.randam_puzzle_mask_mask_size)
+            if random.random() > self.puzzle_mask_exe_rate:
+                image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
             
             image, label = random_scale_2D(image,label)
 

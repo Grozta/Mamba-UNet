@@ -54,6 +54,8 @@ parser.add_argument('--patch_size', type=list,  default=[256, 256],
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
+parser.add_argument('--num_workers', type=int, default=8,
+                    help='numbers of workers in dataloader')
 args = parser.parse_args()
 
 
@@ -88,7 +90,7 @@ def train(args, snapshot_path):
         random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True,
-                             num_workers=8, pin_memory=True,worker_init_fn=worker_init_fn)
+                             num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,num_workers =1)
 
     model.train()

@@ -335,8 +335,7 @@
                 "--exp", "ACDC/trainLabel",
                 "--max_iterations","10000",
                 "--labeled_num", "140",
-                "--batch_size","24",
-                "--tag","v0.1"
+                "--batch_size","24"
             ], // python train_fully_supervised_2D_trainLabel.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --labeled_num 140 --tag v0.1
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",

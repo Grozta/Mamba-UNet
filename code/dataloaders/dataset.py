@@ -452,14 +452,16 @@ class RandomGeneratorv3(object):
         self.puzzle_mask_exe_rate = 0.0
         self.puzzle_mask_mask_rate = 0.25
         self.puzzle_mask_mask_size = (8,8)
-        self.puzzle_mask_mask_size_list = [1,2,4,8]
-        self.puzzle_mask_mask_rate_list = [0.25,0.35,0.45,0.55,0.65]
+        self.puzzle_mask_mask_size_list = [1,1,1,1,2,2,2,4,4,8]
+        self.puzzle_mask_mask_rate_list = [0.15,0.17,0.19,0.21,0.23,0.25,0.27,0.30,0.35,0.40,0.45,0.55,0.65]
         
         self.edge_mask_exe_rate = 0.3
         self.edge_mask_mask_rate = 0.03
         self.edge_mask_mask_size = (4,4)
-        self.edge_mask_mask_size_list = [1,2,3,4,5,6,7]
+        self.edge_mask_mask_size_list = [1,2,3,4]
         self.edge_mask_total = (1,4)
+        self.val = -1
+        self.val_list=[-1,0]
         
     def gen_mask_param(self):
         puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
@@ -470,6 +472,8 @@ class RandomGeneratorv3(object):
         edge_mask_mask_size = random.choice(self.edge_mask_mask_size_list)
         self.edge_mask_mask_size = (edge_mask_mask_size,edge_mask_mask_size)
         self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
+        
+        self.val = random.choice(self.val_list)
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
@@ -485,7 +489,7 @@ class RandomGeneratorv3(object):
              
             if random.random() > self.edge_mask_exe_rate:
                 self.gen_mask_param()
-                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size)
+                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
                 
             if random.random() > self.puzzle_mask_exe_rate:
                 image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)

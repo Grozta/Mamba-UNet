@@ -319,6 +319,47 @@ class UNet(nn.Module):
         feature = self.encoder(x)
         output = self.decoder(feature)
         return output
+    
+class TLUNet(nn.Module):
+    def __init__(self, in_chns, class_num):
+        super(TLUNet, self).__init__()
+
+        params = {'in_chns': in_chns,
+                  'feature_chns': [16, 32, 64, 128, 256],
+                  'dropout': [0.05, 0.1, 0.2, 0.3, 0.5],
+                  'class_num': class_num,
+                  'bilinear': False,
+                  'acti_func': 'relu'}
+        
+        params_mask = {'in_chns': class_num,
+                  'feature_chns': [16, 32, 64, 128, 256],
+                  'dropout': [0.05, 0.1, 0.2, 0.3, 0.5],
+                  'class_num': class_num,
+                  'bilinear': False,
+                  'acti_func': 'relu'}
+
+        self.encoder = Encoder(params)
+        self.decoder = Decoder(params)
+        self.mask_encoder = Encoder(params_mask)
+        self.mask_decoder = Decoder(params_mask)
+        
+    def stage1(self, x):
+        feature = self.encoder(x)
+        output = self.decoder(feature)
+        return output
+    
+    def stage2(self, x):
+        mask_feature = self.mask_encoder(x)
+        mask_output = self.mask_decoder(mask_feature)
+        return mask_output
+
+    def forward(self, x):
+        feature = self.encoder(x)
+        output = self.decoder(feature)
+        softmax_result = torch.softmax(output, dim=1)
+        mask_feature = self.mask_encoder(softmax_result)
+        mask_output = self.mask_decoder(mask_feature)
+        return mask_output
 
 
 class UNet_CCT(nn.Module):

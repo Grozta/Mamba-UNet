@@ -27,7 +27,7 @@ from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds, test_single_volume_for_trainLabel
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_label',default=False, 
+parser.add_argument('--train_label',default=True, 
                     action="store_true", help="train label mode")
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
@@ -36,11 +36,9 @@ parser.add_argument('--exp', type=str,
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
-                    default='TLunet', help='model_name')
+                    default='unet', help='model_name')
 parser.add_argument('--pretrain_path', type=str,
-                    default='../model/ACDC/Fully_Supervised_140_labeled/unet/unet_best_model.pth', help='pretrain model path')
-parser.add_argument('--mask_pretrain_path', type=str,
-                    default='../model/ACDC/trainLabel_140_labeled/unet_v0.4/unet_best_model.pth', help='mask pretrain model path')
+                    default='../data/pretrain/xxxx.pth', help='pretrain model path')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
@@ -70,30 +68,6 @@ def patients_to_slices(dataset, patiens_num):
         print("Error")
     return ref_dict[str(patiens_num)]
 
-def worker_init_fn(worker_id):
-        random.seed(args.seed + worker_id)
-        
-def load_dict_from_pretrain(model,model_pretrain_path,ema_model,ema_model_pretrain_path):
-    
-    if os.path.exists(model_pretrain_path) and os.path.exists(ema_model_pretrain_path):
-        # model的前半部分
-        model_pretrained_dict = torch.load(model_pretrain_path)
-        model.load_state_dict(model_pretrained_dict, strict=False)
-        
-        # model的后半部分
-        model_dict = model.state_dict()
-        mask_model_pretrained_dict = torch.load(ema_model_pretrain_path)
-        pretrained_dict = dict()
-        for k, v in mask_model_pretrained_dict.items():
-            new_key = k.replace("encoder", "mask_encoder")
-            if(new_key in model_dict):
-                model_dict[new_key] = v
-        model.load_state_dict(model_dict)
-        
-        # mask_model
-        ema_model.load_state_dict(mask_model_pretrained_dict, strict=False)
-    return model, ema_model
-        
 
 def train(args, snapshot_path):
     base_lr = args.base_lr
@@ -103,18 +77,17 @@ def train(args, snapshot_path):
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     if args.train_label:
-        model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
-        ema_model = net_factory(None,args,net_type='unet', in_chns=num_classes, class_num=num_classes)
+        model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
     else:
-        model = net_factory(None,args,net_type='unet', in_chns=num_classes, class_num=num_classes)
+        model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
         
-    if args.train_label:
-        model, ema_model = load_dict_from_pretrain(model,args.pretrain_path,ema_model,args.mask_pretrain_path)
-        
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGenerator(args.patch_size)
+    db_train = BaseDataSets4v1(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
+        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)
     ]))
-    db_val = BaseDataSets(base_dir=args.root_path, split="val")
+    db_val = BaseDataSets4v1(base_dir=args.root_path, split="val")
+
+    def worker_init_fn(worker_id):
+        random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True,
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
@@ -140,20 +113,12 @@ def train(args, snapshot_path):
             volume_batch, label_batch = sampled_batch['image'], sampled_batch['label']
             volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda()
 
-            stage1outputs = model.stage1(volume_batch)
-            stage1outputs_soft = torch.softmax(stage1outputs, dim=1)
-            stage2outputs = model.stage2(stage1outputs_soft)
-            stage2outputs_soft = torch.softmax(stage2outputs, dim=1)
-            
-            stage2loss_ce = ce_loss(stage2outputs, label_batch[:].long())
-            stage2loss_dice = dice_loss(stage2outputs_soft, label_batch.unsqueeze(1))
-            stage2loss = 0.5 * (stage2loss_dice + stage2loss_ce)
-            
-            stage1loss_ce = ce_loss(stage1outputs, label_batch[:].long())
-            stage1loss_dice = dice_loss(stage1outputs_soft, label_batch.unsqueeze(1))
-            stage1loss = 0.5 * (stage1loss_dice + stage1loss_ce)
-            loss = 0.5 * (stage1loss + stage2loss)
-            
+            outputs = model(volume_batch)
+            outputs_soft = torch.softmax(outputs, dim=1)
+
+            loss_ce = ce_loss(outputs, label_batch[:].long())
+            loss_dice = dice_loss(outputs_soft, label_batch.unsqueeze(1))
+            loss = 0.5 * (loss_dice + loss_ce)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -165,20 +130,20 @@ def train(args, snapshot_path):
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', stage1loss_ce, iter_num)
-            writer.add_scalar('info/loss_dice', stage1loss_dice, iter_num)
+            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
+            writer.add_scalar('info/loss_dice', loss_dice, iter_num)
 
             logging.info(
                 'iteration %d : loss : %f, loss_ce: %f, loss_dice: %f' %
-                (iter_num, loss.item(), stage1loss_ce.item(), stage1loss_dice.item()))
+                (iter_num, loss.item(), loss_ce.item(), loss_dice.item()))
 
             if iter_num % 20 == 0:
                 image = volume_batch[1, 0:1, :, :]
                 writer.add_image('train/Image', image, iter_num)
-                stage1outputs = torch.argmax(torch.softmax(
-                    stage1outputs, dim=1), dim=1, keepdim=True)
+                outputs = torch.argmax(torch.softmax(
+                    outputs, dim=1), dim=1, keepdim=True)
                 writer.add_image('train/Prediction',
-                                 stage1outputs[1, ...] * 50, iter_num)
+                                 outputs[1, ...] * 50, iter_num)
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 writer.add_image('train/GroundTruth', labs, iter_num)
 
@@ -186,7 +151,7 @@ def train(args, snapshot_path):
                 model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume(
+                    metric_i = test_single_volume_for_trainLabel(
                         sampled_batch["image"], sampled_batch["label"], model, classes=num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
@@ -216,7 +181,7 @@ def train(args, snapshot_path):
                     'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
                 model.train()
 
-            if iter_num % 2000 == 0:
+            if iter_num % 4000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)
@@ -243,11 +208,7 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
-    if args.train_label:
-        args.model = 'TLunet'
-    else:
-        args.model = 'unet'
-    
+
     snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
         args.exp, args.labeled_num, args.model, args.tag)
     if not os.path.exists(snapshot_path):

@@ -47,7 +47,7 @@ def test_single_volume(image, label, net, classes, patch_size=[256, 256]):
             prediction == i, label == i))
     return metric_list
 
-def test_single_volume_for_trainLabel(image, label, net, classes, patch_size=[256, 256]):
+def test_single_volume_for_trainLabel(image, label, net, ema_net, classes, patch_size=[256, 256]):
     image, label = image.squeeze(0).cpu().detach(
     ).numpy(), label.squeeze(0).cpu().detach().numpy()
     prediction = np.zeros_like(label)
@@ -55,14 +55,14 @@ def test_single_volume_for_trainLabel(image, label, net, classes, patch_size=[25
         slice = image[ind, :, :]
         x, y = slice.shape[0], slice.shape[1]
         slice = zoom(slice, (patch_size[0] / x, patch_size[1] / y), order=0)
-        slice = image2binary(slice,num_classes=classes)
-        slice = np_soft_max(slice)
-        
-        input = torch.from_numpy(slice).unsqueeze(0).float().cuda()
+        input = torch.from_numpy(slice).unsqueeze(
+            0).unsqueeze(0).float().cuda()
         net.eval()
+        ema_net.eval()
         with torch.no_grad():
-            out = torch.argmax(torch.softmax(
-                net(input), dim=1), dim=1).squeeze(0)
+            out = torch.softmax(net(input), dim=1)
+            out = torch.argmax(torch.softmax(ema_net(out), dim=1), dim=1).squeeze(0)
+            
             out = out.cpu().detach().numpy()
             pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
             prediction[ind] = pred

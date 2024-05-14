@@ -331,12 +331,14 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path", "/home/grozta/Desktop/DATASET/ACDC",
+                "--root_path", "/media/icml/H4T/DATASET/ACDC",
                 "--exp", "ACDC/trainLabel",
                 "--max_iterations","20000",
                 "--labeled_num", "140",
                 "--batch_size","24",
-                "--train_label"
+                "--train_label",
+                "--pretrain_path","/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/seg_model.pth",
+                "--mask_pretrain_path","/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/mad_model.pth"
             ], // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --labeled_num 140 --tag v0.1
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",

@@ -192,6 +192,27 @@ def random_crop_2D(image, label, output_size=(256, 256)):
     
     return  image, label
 
+def random_crop_2D_mask(image, label, mask_label, output_size=(256, 256)):
+
+    # pad the sample if necessary
+    if label.shape[0] <= output_size[0] or label.shape[1] <= output_size[1] :
+        pw = max((output_size[0] - label.shape[0]) // 2 + 3, 0)
+        ph = max((output_size[1] - label.shape[1]) // 2 + 3, 0)
+        
+        image = np.pad(image, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+        label = np.pad(label, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+        mask_label = np.pad(mask_label, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+
+    (w, h) = image.shape
+    w1 = np.random.randint(0, w - output_size[0])
+    h1 = np.random.randint(0, h - output_size[1])
+
+    mask_label = mask_label[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+    label = label[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+    image = image[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+    
+    return  image, label, mask_label
+
 def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
     random_scale = np.random.uniform(0.8, 1.2)
     x, y = image.shape
@@ -199,6 +220,15 @@ def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
     label = zoom(label, random_scale, order=0)
 
     return  image, label
+
+def random_scale_2D_mask( image, label, mask_label, scale_range=(0.8, 1.2)):
+    random_scale = np.random.uniform(0.8, 1.2)
+    x, y = image.shape
+    image = zoom(image, random_scale, order=0)
+    label = zoom(label, random_scale, order=0)
+    mask_label = zoom(mask_label, random_scale, order=0)
+
+    return  image, label, mask_label
 
 def resize_data(image, label,output_size=(256, 256)):
     
@@ -511,6 +541,75 @@ class RandomGeneratorv3(object):
         image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
+        return sample
+    
+class RandomGeneratorv4(object):
+    """for label train 
+    """
+    def __init__(self, output_size, num_classes = 4):
+        self.output_size = output_size
+        self.num_classes = num_classes
+        self.puzzle_mask_exe_rate = 0.2
+        self.puzzle_mask_mask_rate = 0.25
+        self.puzzle_mask_mask_size = (8,8)
+        self.puzzle_mask_mask_size_list = [1,1,1,1,2,2,2,4,4,8]
+        self.puzzle_mask_mask_rate_list = [0.15,0.17,0.19,0.21,0.23,0.25,0.27,0.30,0.35,0.40,0.45,0.55,0.65]
+        
+        self.edge_mask_exe_rate = 0.3
+        self.edge_mask_mask_rate = 0.03
+        self.edge_mask_mask_size = (4,4)
+        self.edge_mask_mask_size_list = [1,2,3,4]
+        self.edge_mask_total = (1,4)
+        self.val = -1
+        self.val_list=[-1,0]
+        
+    def gen_mask_param(self):
+        puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
+        self.puzzle_mask_mask_size = (puzzle_mask_mask_size,puzzle_mask_mask_size)
+        self.puzzle_mask_mask_rate = random.choice(self.puzzle_mask_mask_rate_list)
+        
+        total_value = random.uniform(self.edge_mask_total[-2],self.edge_mask_total[-1])
+        edge_mask_mask_size = random.choice(self.edge_mask_mask_size_list)
+        self.edge_mask_mask_size = (edge_mask_mask_size,edge_mask_mask_size)
+        self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
+        
+        self.val = random.choice(self.val_list)
+
+    def __call__(self, sample):
+        image, label = sample["image"], sample["label"]
+        
+        if random.random() > 0.5:
+            image, label = random_rot_flip(image, label)
+            
+        if random.random() > 0.5:
+            image, label = random_rotate(image, label)
+        
+        image, label = resize_data(image, label,self.output_size)
+        
+        mask_label = label.copy()
+        
+        self.gen_mask_param()
+        
+        rand = random.random()
+        if rand < 0.20:
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        elif rand < 0.85:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+        else:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        
+        image, label, mask_label = random_scale_2D_mask(image,label,mask_label)
+
+        image, label, mask_label = random_crop_2D_mask(image,label,mask_label,self.output_size)
+
+        mask_label = image2binary(mask_label,num_classes=self.num_classes)
+        mask_label = np_soft_max(mask_label)
+        
+        mask_label = torch.from_numpy(mask_label.astype(np.float32))
+        image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.long))
+        sample = {"image": image, "label": label, 'mask_label': mask_label}
         return sample
 
 

@@ -21,8 +21,9 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv4
 from networks.net_factory import net_factory
+from networks.unet import initialize_module
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds, test_single_volume_for_trainLabel
 
@@ -36,7 +37,7 @@ parser.add_argument('--exp', type=str,
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
-                    default='TLunet', help='model_name')
+                    default='unet', help='model_name')
 parser.add_argument('--pretrain_path', type=str,
                     default='../model/ACDC/Fully_Supervised_140_labeled/unet/unet_best_model.pth', help='pretrain model path')
 parser.add_argument('--mask_pretrain_path', type=str,
@@ -56,16 +57,17 @@ parser.add_argument('--patch_size', type=list,  default=[256, 256],
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
-parser.add_argument('--num_workers', type=int, default=8,
+parser.add_argument('--num_workers', type=int, default=16,
                     help='numbers of workers in dataloader')
+parser.add_argument('--ema_decay', type=float,  default=0.999, 
+                    help='ema_decay')
 args = parser.parse_args()
 
 
 def patients_to_slices(dataset, patiens_num):
     ref_dict = None
     if "ACDC" in dataset:
-        ref_dict = {"3": 68, "7": 136,
-                    "14": 256, "21": 396, "28": 512, "35": 664, "140": 1312}
+        ref_dict = {"3": 68, "7": 136, "14": 256, "21": 396, "28": 512, "35": 664, "140": 1312}
     else:
         print("Error")
     return ref_dict[str(patiens_num)]
@@ -73,27 +75,15 @@ def patients_to_slices(dataset, patiens_num):
 def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
         
-def load_dict_from_pretrain(model,model_pretrain_path,ema_model,ema_model_pretrain_path):
-    
-    if os.path.exists(model_pretrain_path) and os.path.exists(ema_model_pretrain_path):
-        # model的前半部分
-        model_pretrained_dict = torch.load(model_pretrain_path)
-        model.load_state_dict(model_pretrained_dict, strict=False)
+def get_current_consistency_weight(consistency,epoch):  
+    # Consistency ramp-up from https://arxiv.org/abs/1610.02242
+    return consistency * ramps.sigmoid_rampup(epoch, args.consistency_rampup)
         
-        # model的后半部分
-        model_dict = model.state_dict()
-        mask_model_pretrained_dict = torch.load(ema_model_pretrain_path)
-        pretrained_dict = dict()
-        for k, v in mask_model_pretrained_dict.items():
-            new_key = k.replace("encoder", "mask_encoder")
-            if(new_key in model_dict):
-                model_dict[new_key] = v
-        model.load_state_dict(model_dict)
-        
-        # mask_model
-        ema_model.load_state_dict(mask_model_pretrained_dict, strict=False)
-    return model, ema_model
-        
+def update_ema_variables(model, ema_model, alpha, global_step):
+    # Use the true average until the exponential average is more correct
+    alpha = min(1 - 1 / (global_step + 1), alpha)
+    for ema_param, param in zip(ema_model.parameters(), model.parameters()):
+        ema_param.data.mul_(alpha).add_(1 - alpha, param.data)  
 
 def train(args, snapshot_path):
     base_lr = args.base_lr
@@ -103,16 +93,21 @@ def train(args, snapshot_path):
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     if args.train_label:
-        model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
-        ema_model = net_factory(None,args,net_type='unet', in_chns=num_classes, class_num=num_classes)
+        seg_model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
+        mad_model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
+        ema_model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
     else:
         model = net_factory(None,args,net_type='unet', in_chns=num_classes, class_num=num_classes)
         
     if args.train_label:
-        model, ema_model = load_dict_from_pretrain(model,args.pretrain_path,ema_model,args.mask_pretrain_path)
+        model_pretrained_dict = torch.load(args.pretrain_path)
+        mask_model_pretrained_dict = torch.load(args.mask_pretrain_path)
+        seg_model.load_state_dict(model_pretrained_dict, strict=False)
+        mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+        initialize_module(ema_model)
         
     db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGenerator(args.patch_size)
+        RandomGeneratorv4(args.patch_size, num_classes=num_classes)
     ]))
     db_val = BaseDataSets(base_dir=args.root_path, split="val")
 
@@ -120,9 +115,15 @@ def train(args, snapshot_path):
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,num_workers =1)
 
-    model.train()
+    seg_model.train()
+    mad_model.train()
+    ema_model.train()
 
-    optimizer = optim.SGD(model.parameters(), lr=base_lr,
+    optimizer_seg = optim.SGD(seg_model.parameters(), lr=base_lr,
+                          momentum=0.9, weight_decay=0.0001)
+    optimizer_mad = optim.SGD(mad_model.parameters(), lr=base_lr,
+                          momentum=0.9, weight_decay=0.0001)
+    optimizer_ema = optim.SGD(ema_model.parameters(), lr=base_lr,
                           momentum=0.9, weight_decay=0.0001)
     ce_loss = CrossEntropyLoss()
     dice_loss = losses.DiceLoss(num_classes)
@@ -137,57 +138,103 @@ def train(args, snapshot_path):
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
 
-            volume_batch, label_batch = sampled_batch['image'], sampled_batch['label']
-            volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda()
-
-            stage1outputs = model.stage1(volume_batch)
-            stage1outputs_soft = torch.softmax(stage1outputs, dim=1)
-            stage2outputs = model.stage2(stage1outputs_soft)
-            stage2outputs_soft = torch.softmax(stage2outputs, dim=1)
+            volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
+            volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
             
-            stage2loss_ce = ce_loss(stage2outputs, label_batch[:].long())
-            stage2loss_dice = dice_loss(stage2outputs_soft, label_batch.unsqueeze(1))
-            stage2loss = 0.5 * (stage2loss_dice + stage2loss_ce)
+            """struct
+            label-----------|-----mad_model
+                           /x/       |
+                            |        | ema_update
+            img------seg_model----ema_model------------output
+            """            
+            seg_outputs = seg_model(volume_batch)
+            seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            stage1loss_ce = ce_loss(stage1outputs, label_batch[:].long())
-            stage1loss_dice = dice_loss(stage1outputs_soft, label_batch.unsqueeze(1))
-            stage1loss = 0.5 * (stage1loss_dice + stage1loss_ce)
-            loss = 0.5 * (stage1loss + stage2loss)
+            # mask_input = seg_outputs_soft.detach()
+            # blend_outputs = (mask_input+mask_label_batch)/2
+            # blend_input = torch.softmax(blend_outputs, dim=1)
+            mad_outputs = mad_model(mask_label_batch)
+            mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            optimizer.zero_grad()
+            ema_outputs = ema_model(seg_outputs_soft)
+            ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
+            
+            #------------------------loss------------------------------
+            seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
+            seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
+            seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)*0.8
+            
+            mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
+            mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
+            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)*0.6
+            
+            ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
+            ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
+            ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
+            
+            loss = seg_loss + mad_loss + ema_loss
+            
+            optimizer_seg.zero_grad()
+            optimizer_mad.zero_grad()
+            optimizer_ema.zero_grad()
             loss.backward()
-            optimizer.step()
+            optimizer_seg.step()
+            optimizer_mad.step()
+            optimizer_ema.step()
 
             lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
-            for param_group in optimizer.param_groups:
+            for param_group,param_group_ema,param_group_mad in zip(optimizer_seg.param_groups,optimizer_ema.param_groups,optimizer_mad.param_groups):
                 param_group['lr'] = lr_
-
+                param_group_ema['lr'] = lr_
+                param_group_mad['lr'] = lr_
+                
+            update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', stage1loss_ce, iter_num)
-            writer.add_scalar('info/loss_dice', stage1loss_dice, iter_num)
+            writer.add_scalar('info/seg_loss', seg_loss, iter_num)
+            writer.add_scalar('info/mad_loss', mad_loss, iter_num)
+            writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
             logging.info(
-                'iteration %d : loss : %f, loss_ce: %f, loss_dice: %f' %
-                (iter_num, loss.item(), stage1loss_ce.item(), stage1loss_dice.item()))
+                'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f, ema_loss: %f' %
+                (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
 
             if iter_num % 20 == 0:
                 image = volume_batch[1, 0:1, :, :]
                 writer.add_image('train/Image', image, iter_num)
-                stage1outputs = torch.argmax(torch.softmax(
-                    stage1outputs, dim=1), dim=1, keepdim=True)
-                writer.add_image('train/Prediction',
-                                 stage1outputs[1, ...] * 50, iter_num)
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 writer.add_image('train/GroundTruth', labs, iter_num)
-
+                
+                mask_labs = torch.argmax(torch.softmax(
+                    mask_label_batch, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/mask_lable',
+                                 mask_labs[1, ...] * 50, iter_num)
+                
+                seg_outputs = torch.argmax(torch.softmax(
+                    seg_outputs, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/segPrediction',
+                                 seg_outputs[1, ...] * 50, iter_num)
+                
+                ema_outputs = torch.argmax(torch.softmax(
+                    ema_outputs, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/emaPrediction',
+                                 ema_outputs[1, ...] * 50, iter_num)
+                
+                mad_outputs = torch.argmax(torch.softmax(
+                    mad_outputs, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/madPrediction',
+                                 mad_outputs[1, ...] * 50, iter_num)
+                
+                
             if iter_num > 0 and iter_num % 200 == 0:
-                model.eval()
+                seg_model.eval()
+                mad_model.eval()
+                ema_model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume(
-                        sampled_batch["image"], sampled_batch["label"], model, classes=num_classes, patch_size=args.patch_size)
+                    metric_i = test_single_volume_for_trainLabel(
+                        sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
                 for class_i in range(num_classes-1):
@@ -209,17 +256,21 @@ def train(args, snapshot_path):
                                                       iter_num, round(best_performance, 4)))
                     save_best = os.path.join(snapshot_path,
                                              '{}_best_model.pth'.format(args.model))
-                    torch.save(model.state_dict(), save_mode_path)
-                    torch.save(model.state_dict(), save_best)
+                    check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
+                    torch.save(check_point, save_mode_path)
+                    torch.save(check_point, save_best)
 
                 logging.info(
                     'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
-                model.train()
+                seg_model.train()
+                mad_model.train()
+                ema_model.train()
 
             if iter_num % 2000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
-                torch.save(model.state_dict(), save_mode_path)
+                check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
+                torch.save(check_point, save_mode_path)
                 logging.info("save model to {}".format(save_mode_path))
 
             if iter_num >= max_iterations:
@@ -243,10 +294,6 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
-    if args.train_label:
-        args.model = 'TLunet'
-    else:
-        args.model = 'unet'
     
     snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
         args.exp, args.labeled_num, args.model, args.tag)
@@ -255,7 +302,7 @@ if __name__ == "__main__":
     if os.path.exists(snapshot_path + '/code'):
         shutil.rmtree(snapshot_path + '/code')
     shutil.copytree('.', snapshot_path + '/code',
-                    shutil.ignore_patterns(['.git', '__pycache__']))
+                    shutil.ignore_patterns(['.git/*', '__pycache__/*','pretrained_ckpt/*']))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')

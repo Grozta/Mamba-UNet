@@ -5,3 +5,4 @@ code/pretrained_ckpt/swin_tiny_patch4_window7_224.pth
 code/pretrained_ckpt/MagicNet_2D_mask_pretrain.pth
 code/pretrained_ckpt/vnet_32_7_256_model.pth
 code/pretrained_ckpt/mambaunet7_best_model.pth
+data/pretrain/

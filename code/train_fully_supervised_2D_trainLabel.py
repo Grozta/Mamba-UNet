@@ -57,7 +57,7 @@ parser.add_argument('--patch_size', type=list,  default=[256, 256],
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
-parser.add_argument('--num_workers', type=int, default=16,
+parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--ema_decay', type=float,  default=0.999, 
                     help='ema_decay')
@@ -150,10 +150,10 @@ def train(args, snapshot_path):
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            # mask_input = seg_outputs_soft.detach()
-            # blend_outputs = (mask_input+mask_label_batch)/2
-            # blend_input = torch.softmax(blend_outputs, dim=1)
-            mad_outputs = mad_model(mask_label_batch)
+            mask_input = seg_outputs_soft.detach()
+            blend_outputs = (mask_input+mask_label_batch)/2
+            blend_input = torch.softmax(blend_outputs, dim=1)
+            mad_outputs = mad_model(blend_input)
             mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
             ema_outputs = ema_model(seg_outputs_soft)
@@ -162,11 +162,11 @@ def train(args, snapshot_path):
             #------------------------loss------------------------------
             seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
             seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
-            seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)*0.8
+            seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
             
             mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
             mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
-            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)*0.6
+            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
             
             ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))

@@ -339,7 +339,7 @@
                 "--train_label",
                 "--pretrain_path","/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/seg_model.pth",
                 "--mask_pretrain_path","/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/mad_model.pth"
-            ], // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --labeled_num 140 --tag v0.1
+            ], // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --labeled_num 140 --tag v1.1
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }

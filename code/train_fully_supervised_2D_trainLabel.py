@@ -21,6 +21,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
+from config import get_config
 from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv4
 from networks.net_factory import net_factory
 from networks.unet import initialize_module
@@ -37,32 +38,57 @@ parser.add_argument('--exp', type=str,
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
-                    default='unet', help='model_name')
+                    default='unet', help='mad_model_name and ema_model name')
+parser.add_argument('--seg_model', type=str,
+                    default='unet', help='seg_model name')
 parser.add_argument('--pretrain_path', type=str,
                     default='../model/ACDC/Fully_Supervised_140_labeled/unet/unet_best_model.pth', help='pretrain model path')
 parser.add_argument('--mask_pretrain_path', type=str,
                     default='../model/ACDC/trainLabel_140_labeled/unet_v0.4/unet_best_model.pth', help='mask pretrain model path')
+parser.add_argument('--load_ema_pretrain',default=False, 
+                    action="store_true", help="if true,load ema_seg pretrian model")
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
-                    default=10000, help='maximum epoch number to train')
+                    default=20000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
-parser.add_argument('--patch_size', type=list,  default=[256, 256],
+parser.add_argument('--patch_size', type=int,  default=256,
                     help='patch size of network input')
-parser.add_argument('--seed', type=int,  default=1337, help='random seed')
+parser.add_argument('--seed', type=int,  default=1337, 
+                    help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--ema_decay', type=float,  default=0.999, 
                     help='ema_decay')
+parser.add_argument('--cfg', type=str, 
+                    default="../code/configs/vmamba_tiny.yaml", help='path to config file', )
+parser.add_argument("--opts", default=None, nargs='+',
+                    help="Modify config options by adding 'KEY VALUE' pairs. ")
+parser.add_argument('--zip', action='store_true',
+                    help='use zipped dataset instead of folder dataset')
+parser.add_argument('--cache-mode', type=str, default='part', choices=['no', 'full', 'part'],
+                    help='no: no cache, ''full: cache all data, ''part: sharding the dataset into nonoverlapping pieces and only cache one piece')
+parser.add_argument('--resume', help='resume from checkpoint')
+parser.add_argument('--accumulation-steps', type=int,
+                    help="gradient accumulation steps")
+parser.add_argument('--use-checkpoint', action='store_true',
+                    help="whether to use gradient checkpointing to save memory")
+parser.add_argument('--amp-opt-level', type=str, default='O1', choices=['O0', 'O1', 'O2'],
+                    help='mixed precision opt level, if O0, no amp is used')
+parser.add_argument('--eval', action='store_true',
+                    help='Perform evaluation only')
+parser.add_argument('--throughput', action='store_true',
+                    help='Test throughput only')
 args = parser.parse_args()
-
+args.patch_size = [args.patch_size,args.patch_size]
+config = get_config(args)
 
 def patients_to_slices(dataset, patiens_num):
     ref_dict = None
@@ -93,18 +119,25 @@ def train(args, snapshot_path):
 
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     if args.train_label:
-        seg_model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
-        mad_model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
-        ema_model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
+        seg_model = net_factory(config, args, net_type=args.seg_model, in_chns=1, class_num=num_classes)
+        mad_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
+        ema_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
     else:
-        model = net_factory(None,args,net_type='unet', in_chns=num_classes, class_num=num_classes)
+        model = net_factory(config, args, net_type='unet', in_chns=num_classes, class_num=num_classes)
         
     if args.train_label:
-        model_pretrained_dict = torch.load(args.pretrain_path)
-        mask_model_pretrained_dict = torch.load(args.mask_pretrain_path)
-        seg_model.load_state_dict(model_pretrained_dict, strict=False)
-        mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
-        initialize_module(ema_model)
+        if os.path.exists(args.pretrain_path):
+            model_pretrained_dict = torch.load(args.pretrain_path)
+            seg_model.load_state_dict(model_pretrained_dict, strict=False)
+        if os.path.exists(args.pretrain_path):
+            mask_model_pretrained_dict = torch.load(args.mask_pretrain_path)
+            mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+        else:
+            initialize_module(mad_model)
+        if args.load_ema_pretrain:
+            ema_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+        else:
+            initialize_module(ema_model)
         
     db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
         RandomGeneratorv4(args.patch_size, num_classes=num_classes)

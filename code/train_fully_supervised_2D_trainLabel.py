@@ -328,14 +328,14 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     
-    snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
-        args.exp, args.labeled_num, args.model, args.tag)
+    snapshot_path = "../model/{}_{}_labeled/{}_{}_{}".format(
+        args.exp, args.labeled_num, args.seg_model, args.model, args.tag)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):
         shutil.rmtree(snapshot_path + '/code')
     shutil.copytree('.', snapshot_path + '/code',
-                    shutil.ignore_patterns(['.git/*', '__pycache__/*','pretrained_ckpt/*']))
+                    shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')

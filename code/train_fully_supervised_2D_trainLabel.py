@@ -120,7 +120,7 @@ def train(args, snapshot_path):
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     if args.train_label:
         seg_model = net_factory(config, args, net_type=args.seg_model, in_chns=1, class_num=num_classes)
-        mad_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
+        # mad_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
         ema_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
     else:
         model = net_factory(config, args, net_type='unet', in_chns=num_classes, class_num=num_classes)
@@ -129,11 +129,12 @@ def train(args, snapshot_path):
         if os.path.exists(args.pretrain_path):
             model_pretrained_dict = torch.load(args.pretrain_path)
             seg_model.load_state_dict(model_pretrained_dict, strict=False)
-        if os.path.exists(args.pretrain_path):
+        if os.path.exists(args.mask_pretrain_path):
             mask_model_pretrained_dict = torch.load(args.mask_pretrain_path)
-            mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+            # mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
         else:
-            initialize_module(mad_model)
+            # initialize_module(mad_model)
+            pass
         if args.load_ema_pretrain:
             ema_model.load_state_dict(mask_model_pretrained_dict, strict=False)
         else:
@@ -149,13 +150,13 @@ def train(args, snapshot_path):
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,num_workers =1)
 
     seg_model.train()
-    mad_model.train()
+    # mad_model.train()
     ema_model.train()
 
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=base_lr,
                           momentum=0.9, weight_decay=0.0001)
-    optimizer_mad = optim.SGD(mad_model.parameters(), lr=base_lr,
-                          momentum=0.9, weight_decay=0.0001)
+    # optimizer_mad = optim.SGD(mad_model.parameters(), lr=base_lr,
+    #                       momentum=0.9, weight_decay=0.0001)
     optimizer_ema = optim.SGD(ema_model.parameters(), lr=base_lr,
                           momentum=0.9, weight_decay=0.0001)
     ce_loss = CrossEntropyLoss()
@@ -174,22 +175,22 @@ def train(args, snapshot_path):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
             
-            """struct
-            label-----------|-----mad_model
-                           /x/       |
-                            |        | ema_update
-            img------seg_model----ema_model------------output
+            """struct 方案2
+            label--------------|
+                               |       
+                               |        
+            img------seg_model-|--ema_model------------output
             """            
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            mask_input = seg_outputs_soft.detach()
+            mask_input = seg_outputs_soft#.detach()
             blend_outputs = (mask_input+mask_label_batch)/2
             blend_input = torch.softmax(blend_outputs, dim=1)
-            mad_outputs = mad_model(blend_input)
-            mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
+            # mad_outputs = mad_model(blend_input)
+            # mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            ema_outputs = ema_model(seg_outputs_soft)
+            ema_outputs = ema_model(blend_input)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
@@ -197,41 +198,40 @@ def train(args, snapshot_path):
             seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
             seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
             
-            mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
-            mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
-            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
+            # mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
+            # mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
+            # mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
             
             ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
-            loss = seg_loss + mad_loss + ema_loss
+            loss = seg_loss + ema_loss
             
             optimizer_seg.zero_grad()
-            optimizer_mad.zero_grad()
+            # optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
             loss.backward()
             optimizer_seg.step()
-            optimizer_mad.step()
+            # optimizer_mad.step()
             optimizer_ema.step()
 
             lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
-            for param_group,param_group_ema,param_group_mad in zip(optimizer_seg.param_groups,optimizer_ema.param_groups,optimizer_mad.param_groups):
+            for param_group,param_group_ema in zip(optimizer_seg.param_groups,optimizer_ema.param_groups):
                 param_group['lr'] = lr_
                 param_group_ema['lr'] = lr_
-                param_group_mad['lr'] = lr_
                 
-            update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
+            #update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
-            writer.add_scalar('info/mad_loss', mad_loss, iter_num)
+            #writer.add_scalar('info/mad_loss', mad_loss, iter_num)
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
             logging.info(
-                'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f, ema_loss: %f' %
-                (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
+                'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f' %
+                (iter_num, loss.item(), seg_loss.item(), ema_loss.item()))
 
             if iter_num % 20 == 0:
                 image = volume_batch[1, 0:1, :, :]
@@ -254,15 +254,9 @@ def train(args, snapshot_path):
                 writer.add_image('train/emaPrediction',
                                  ema_outputs[1, ...] * 50, iter_num)
                 
-                mad_outputs = torch.argmax(torch.softmax(
-                    mad_outputs, dim=1), dim=1, keepdim=True)
-                writer.add_image('train/madPrediction',
-                                 mad_outputs[1, ...] * 50, iter_num)
-                
-                
+               
             if iter_num > 0 and iter_num % 200 == 0:
                 seg_model.eval()
-                mad_model.eval()
                 ema_model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
@@ -296,7 +290,6 @@ def train(args, snapshot_path):
                 logging.info(
                     'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
                 seg_model.train()
-                mad_model.train()
                 ema_model.train()
 
             if iter_num % 2000 == 0:

@@ -189,8 +189,8 @@ def train(args, snapshot_path):
             mad_outputs = mad_model(blend_input)
             mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            # ema_outputs = ema_model(seg_outputs_soft)
-            # ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
+            ema_outputs = ema_model(seg_outputs_soft)
+            ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
             seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
@@ -201,9 +201,9 @@ def train(args, snapshot_path):
             mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
             mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
             
-            # ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
-            # ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
-            # ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
+            ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
+            ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
+            ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
             loss = seg_loss + mad_loss #+ ema_loss
             
@@ -227,15 +227,11 @@ def train(args, snapshot_path):
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
             writer.add_scalar('info/mad_loss', mad_loss, iter_num)
-            # writer.add_scalar('info/ema_loss', ema_loss, iter_num)
+            writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
-            # logging.info(
-            #     'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f, ema_loss: %f' %
-            #     (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
-            
             logging.info(
-                'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f' %
-                (iter_num, loss.item(), seg_loss.item(), mad_loss.item()))
+                'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f, ema_loss: %f' %
+                (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
 
             if iter_num % 20 == 0:
                 image = volume_batch[1, 0:1, :, :]
@@ -253,10 +249,10 @@ def train(args, snapshot_path):
                 writer.add_image('train/segPrediction',
                                  seg_outputs[1, ...] * 50, iter_num)
                 
-                # ema_outputs = torch.argmax(torch.softmax(
-                #     ema_outputs, dim=1), dim=1, keepdim=True)
-                # writer.add_image('train/emaPrediction',
-                #                  ema_outputs[1, ...] * 50, iter_num)
+                ema_outputs = torch.argmax(torch.softmax(
+                    ema_outputs, dim=1), dim=1, keepdim=True)
+                writer.add_image('train/emaPrediction',
+                                 ema_outputs[1, ...] * 50, iter_num)
                 
                 mad_outputs = torch.argmax(torch.softmax(
                     mad_outputs, dim=1), dim=1, keepdim=True)

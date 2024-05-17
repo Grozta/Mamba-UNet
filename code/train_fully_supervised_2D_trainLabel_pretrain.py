@@ -32,7 +32,7 @@ parser.add_argument('--train_label',default=True,
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='ACDC/Fully_Supervised_TrainLabel', help='experiment_name')
+                    default='ACDC/TrainLabelPretrain', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,

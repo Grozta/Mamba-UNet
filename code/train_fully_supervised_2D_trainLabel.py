@@ -37,7 +37,7 @@ parser.add_argument('--exp', type=str,
                     default='ACDC/Fully_Supervised_TrainLabel', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
-parser.add_argument('--model', type=str,
+parser.add_argument('--mad_model', type=str,
                     default='unet', help='mad_model_name and ema_model name')
 parser.add_argument('--seg_model', type=str,
                     default='unet', help='seg_model name')
@@ -120,22 +120,22 @@ def train(args, snapshot_path):
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     if args.train_label:
         seg_model = net_factory(config, args, net_type=args.seg_model, in_chns=1, class_num=num_classes)
-        mad_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
-        ema_model = net_factory(config, args, net_type=args.model, in_chns=num_classes, class_num=num_classes)
+        mad_model = net_factory(config, args, net_type=args.mad_model, in_chns=num_classes, class_num=num_classes)
+        ema_model = net_factory(config, args, net_type=args.mad_model, in_chns=num_classes, class_num=num_classes)
     else:
         model = net_factory(config, args, net_type='unet', in_chns=num_classes, class_num=num_classes)
         
     if args.train_label:
-        if os.path.exists(args.pretrain_path):
-            model_pretrained_dict = torch.load(args.pretrain_path)
-            seg_model.load_state_dict(model_pretrained_dict, strict=False)
-        if os.path.exists(args.pretrain_path):
-            mask_model_pretrained_dict = torch.load(args.mask_pretrain_path)
-            mad_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+        if os.path.exists(args.pretrain_path_seg):
+            seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+            seg_model.load_state_dict(seg_model_pretrained_dict, strict=False)
+        if os.path.exists(args.pretrain_path_mad):
+            mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
+            mad_model.load_state_dict(mad_model_pretrained_dict, strict=False)
         else:
             initialize_module(mad_model)
         if args.load_ema_pretrain:
-            ema_model.load_state_dict(mask_model_pretrained_dict, strict=False)
+            ema_model.load_state_dict(mad_model_pretrained_dict, strict=False)
         else:
             initialize_module(ema_model)
         
@@ -288,7 +288,7 @@ def train(args, snapshot_path):
                                                   'iter_{}_dice_{}.pth'.format(
                                                       iter_num, round(best_performance, 4)))
                     save_best = os.path.join(snapshot_path,
-                                             '{}_best_model.pth'.format(args.model))
+                                             '{}_best_model.pth'.format(args.mad_model))
                     check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
                     torch.save(check_point, save_mode_path)
                     torch.save(check_point, save_best)
@@ -328,8 +328,8 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     
-    snapshot_path = "../model/{}_{}_labeled/{}_{}_{}".format(
-        args.exp, args.labeled_num, args.seg_model, args.model, args.tag)
+    snapshot_path = "../model/{}_{}_labeled/{}-{}_{}".format(
+        args.exp, args.labeled_num, args.seg_model, args.mad_model, args.tag)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):

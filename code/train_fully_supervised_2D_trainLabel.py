@@ -41,16 +41,16 @@ parser.add_argument('--mad_model', type=str,
                     default='unet', help='mad_model_name and ema_model name')
 parser.add_argument('--seg_model', type=str,
                     default='unet', help='seg_model name')
-parser.add_argument('--pretrain_path', type=str,
-                    default='../model/ACDC/Fully_Supervised_140_labeled/unet/unet_best_model.pth', help='pretrain model path')
-parser.add_argument('--mask_pretrain_path', type=str,
-                    default='../model/ACDC/trainLabel_140_labeled/unet_v0.4/unet_best_model.pth', help='mask pretrain model path')
+parser.add_argument('--pretrain_path_seg', type=str,
+                    default='../data/pretrain/seg_model_unet.pth', help='pretrain seg_model path')
+parser.add_argument('--pretrain_path_mad', type=str,
+                    default='../data/pretrain/mad_model_unet.pth', help='pretrain mad_model path')
 parser.add_argument('--load_ema_pretrain',default=False, 
                     action="store_true", help="if true,load ema_seg pretrian model")
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
-                    default=20000, help='maximum epoch number to train')
+                    default=30000, help='maximum epoch number to train')
 parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,

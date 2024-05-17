@@ -288,7 +288,7 @@ def train(args, snapshot_path):
                                                   'iter_{}_dice_{}.pth'.format(
                                                       iter_num, round(best_performance, 4)))
                     save_best = os.path.join(snapshot_path,
-                                             '{}_best_model.pth'.format(args.model))
+                                             '{}_{}_best_model.pth'.format(args.seg_model,args.model))
                     check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
                     torch.save(check_point, save_mode_path)
                     torch.save(check_point, save_best)

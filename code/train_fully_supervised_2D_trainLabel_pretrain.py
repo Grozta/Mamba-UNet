@@ -21,10 +21,10 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3,RandomGeneratorv5
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from val_2D import test_single_volume, test_single_volume_ds, test_single_volume_for_trainLabel
+from val_2D import test_single_volume, test_single_volume_ds, test_single_volume_for_trainLabelPretrain
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_label',default=True, 
@@ -49,7 +49,7 @@ parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
-parser.add_argument('--patch_size', type=list,  default=[256, 256],
+parser.add_argument('--patch_size', type=int,  default=224,
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
@@ -57,6 +57,7 @@ parser.add_argument('--labeled_num', type=int, default=140,
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 args = parser.parse_args()
+args.patch_size = [args.patch_size,args.patch_size]
 
 
 def patients_to_slices(dataset, patiens_num):
@@ -81,8 +82,8 @@ def train(args, snapshot_path):
     else:
         model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
         
-    db_train = BaseDataSets4v1(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)
+    db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
+        RandomGeneratorv5(args.patch_size,args.num_classes)
     ]))
     db_val = BaseDataSets4v1(base_dir=args.root_path, split="val")
 
@@ -151,7 +152,7 @@ def train(args, snapshot_path):
                 model.eval()
                 metric_list = 0.0
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume_for_trainLabel(
+                    metric_i = test_single_volume_for_trainLabelPretrain(
                         sampled_batch["image"], sampled_batch["label"], model, classes=num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)

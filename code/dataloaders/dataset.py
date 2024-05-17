@@ -611,6 +611,76 @@ class RandomGeneratorv4(object):
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label, 'mask_label': mask_label}
         return sample
+    
+class RandomGeneratorv5(object):
+    """for label train 
+    """
+    def __init__(self, output_size, num_classes = 4):
+        self.output_size = output_size
+        self.num_classes = num_classes
+        self.puzzle_mask_exe_rate = 0.2
+        self.puzzle_mask_mask_rate = 0.25
+        self.puzzle_mask_mask_size = (8,8)
+        self.puzzle_mask_mask_size_list = [1,1,1,1,2,2,2,4,4,8]
+        self.puzzle_mask_mask_rate_list = [0.15,0.17,0.19,0.21,0.23,0.25,0.27,0.30,0.35,0.40,0.45,0.55,0.65]
+        
+        self.edge_mask_exe_rate = 0.3
+        self.edge_mask_mask_rate = 0.03
+        self.edge_mask_mask_size = (4,4)
+        self.edge_mask_mask_size_list = [1,2,3,4]
+        self.edge_mask_total = (1,4)
+        self.val = -1
+        self.val_list=[-1,0]
+        
+    def gen_mask_param(self):
+        puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
+        self.puzzle_mask_mask_size = (puzzle_mask_mask_size,puzzle_mask_mask_size)
+        self.puzzle_mask_mask_rate = random.choice(self.puzzle_mask_mask_rate_list)
+        
+        total_value = random.uniform(self.edge_mask_total[-2],self.edge_mask_total[-1])
+        edge_mask_mask_size = random.choice(self.edge_mask_mask_size_list)
+        self.edge_mask_mask_size = (edge_mask_mask_size,edge_mask_mask_size)
+        self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
+        
+        self.val = random.choice(self.val_list)
+
+    def __call__(self, sample):
+        image, label = sample["image"], sample["label"]
+        
+        if random.random() > 0.5:
+            image, label = random_rot_flip(image, label)
+            
+        if random.random() > 0.5:
+            image, label = random_rotate(image, label)
+        
+        image, label = resize_data(image, label,self.output_size)
+        
+        mask_label = label.copy()
+        
+        self.gen_mask_param()
+        
+        rand = random.random()
+        if rand < 0.20:
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        elif rand < 0.85:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+        else:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        
+        image, label, mask_label = random_scale_2D_mask(image,label,mask_label)
+
+        image, label, mask_label = random_crop_2D_mask(image,label,mask_label,self.output_size)
+
+        mask_label = image2binary(mask_label,num_classes=self.num_classes)
+        mask_label = np_soft_max(mask_label)
+        image = np.tile(image, (self.num_classes, 1, 1))
+        image = (image+mask_label)/2
+        
+        image = torch.from_numpy(image.astype(np.float32))
+        label = torch.from_numpy(label.astype(np.long))       
+        sample = {"image": image, "label": label}
+        return sample
 
 
 class WeakStrongAugment(object):

@@ -350,6 +350,27 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }
+        },
+        {
+            "name": "UNet_train_label_pretrain",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_fully_supervised_2D_trainLabel_pretrain.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path", "/media/icml/H4T/DATASET/ACDC",
+                "--exp", "ACDC/TrainLabelPretrain",
+                "--max_iterations","10000",
+                "--labeled_num", "140",
+                "--batch_size","12",
+                "--train_label",
+                "--patch_size","224"
+            ], 
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
         }
     ]
 }

@@ -342,10 +342,10 @@
                 "--cfg","../code/configs/swin_tiny_patch4_window7_224_lite.yaml",
                 // "--seg_model","ViM_seg",
                 // "--cfg","../code/configs/vmamba_tiny.yaml",
-                "--pretrain_path"," "//"/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/seg_model.pth",
-                //"--mask_pretrain_path","/media/icml/H4T/laboratory/FrameWork/Mamba-UNet/data/pretrain/mad_model.pth"
+                "--pretrain_path","xx"//"../data/pretrain/seg_model.pth",
+                //"--mask_pretrain_path","../data/pretrain/mad_model.pth"
             ], 
-            // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --tag v1.1 --batch_size 12
+            // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /media/icml/H4T/DATASET/ACDC --exp ACDC/trainLabel --tag v2.2 --batch_size 12 --seg_model ViM_seg --cfg ../code/configs/vmamba_tiny.yaml --pretrain_path ../data/pretrain/seg_model_ViM.pth --patch_size 224 --max_iterations 30000 --mask_pretrain_path ../data/pretrain/mad_model.pth
             // python train_fully_supervised_2D_trainLabel.py --train_label --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/trainLabel --tag v2.0 --batch_size 12 --seg_model ViT_seg --cfg ../code/configs/swin_tiny_patch4_window7_224_lite.yaml --pretrain_path  
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",

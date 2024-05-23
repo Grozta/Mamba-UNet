@@ -315,6 +315,13 @@ def image2binary(img, error_val = 1e-3, num_classes = 4):
     binary_images = np.stack(binary_images)
     return binary_images
 
+def label2color(label,class_num=4):
+    color_img = np.zeros((label.shape[0],label.shape[1],3))
+    color_img[:,:,0][label==1]=1
+    color_img[:,:,1][label==2]=1
+    color_img[:,:,2][label==3]=1
+    return color_img
+
 def np_soft_max(img):
     tensor_a = torch.from_numpy(img).unsqueeze(0)
 
@@ -574,6 +581,22 @@ class RandomGeneratorv4(object):
         self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
         
         self.val = random.choice(self.val_list)
+        
+    def mask_label_onle(self,mask_label,label = None):
+        self.gen_mask_param()
+        
+        rand = random.random()
+        if rand < 0.20:
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        elif rand < 0.85:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+        else:
+            mask_label, label = random_mask_edge(mask_label,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+            mask_label, label = random_mask_puzzle(mask_label,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+            
+        mask_label = image2binary(mask_label,num_classes=self.num_classes)
+        mask_label = np_soft_max(mask_label)
+        return mask_label
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]

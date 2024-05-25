@@ -35,6 +35,41 @@ def calculate_metric_percase(pred, gt):
     # , hd95
     # , asd
 
+def inference_single_case(case, seg_model, test_save_path, args, writer= None):
+    """直接将推理的结果保存在原图中
+    h5f["pred_vim_224"][:] = pred
+    """
+    with h5py.File(args.root_path + "/data/slices/{}.h5".format(case), 'r+') as h5f:
+        image = h5f['image'][:]
+        label = h5f['label'][:]
+        slice = image
+        x, y = slice.shape[0], slice.shape[1]
+        slice = zoom(slice, (args.patch_size[0] / x, args.patch_size[1] / y), order=0)
+        input = torch.from_numpy(slice).unsqueeze(0).unsqueeze(0).float().cuda()
+        seg_model.eval()
+        
+        with torch.no_grad():
+            out_main = seg_model(input)
+            s_out = torch.softmax(out_main, dim=1)
+            out = torch.argmax(s_out, dim=1).squeeze(0)
+
+            out = out.cpu().detach().numpy()
+            pred = zoom(out, (x / args.patch_size[0], y / args.patch_size[0]), order=0).astype(np.uint8)
+            if "pred_vim_224" in h5f:
+                h5f["pred_vim_224"][:] = pred
+            else:
+                h5f.create_dataset('pred_vim_224', data=pred)
+            
+    with h5py.File(args.root_path + "/data/slices/{}.h5".format(case), 'r') as h5f_s:    
+        writer.add_image(f"{case}"+"/input",h5f_s['image'][:], dataformats='HW')
+        writer.add_image(f"{case}"+"/pred",label2color(h5f_s["pred_vim_224"][:]), dataformats='HWC')
+        writer.add_image(f"{case}"+"/GT",label2color(h5f_s["label"][:]), dataformats='HWC')
+
+    first_metric = calculate_metric_percase(pred == 1, label == 1)
+    second_metric = calculate_metric_percase(pred == 2, label == 2)
+    third_metric = calculate_metric_percase(pred == 3, label == 3)
+    
+    return first_metric, second_metric, third_metric
 
 def test_single_volume(case, seg_model, test_save_path, args, writer= None,ema_model = None):
     h5f = h5py.File(args.root_path + "/data/{}.h5".format(case), 'r')
@@ -228,17 +263,53 @@ def Inference_seg_ema_model(args):
     logging.info(f"dsc:{(avg_metric[0]+avg_metric[1]+avg_metric[2])/3}")
     return avg_metric
 
+def Inference_seg_model_genarate_new_dataset(args):
+    with open(args.root_path + "/train_slices.list", "r") as f1:
+        args.sample_list = f1.readlines()
+    args.sample_list = [item.replace("\n", "") for item in args.sample_list]
+    print("total {} samples".format(len(args.sample_list)))
+    test_save_path = "../model/{}_{}_labeled/{}_{}".format(    
+        args.exp, args.labeled_num, args.model, args.tag)
+    if os.path.exists(test_save_path):
+        shutil.rmtree(test_save_path)
+    os.makedirs(test_save_path)
+    logging.basicConfig(filename=test_save_path+"/log.txt", level=logging.INFO,
+                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+    logging.info(str(args))
+    writer = SummaryWriter(test_save_path + '/log')
+    
+    seg_model = net_factory(args.config,args,net_type=args.seg_model)
+    if os.path.exists(args.pretrain_path_seg):
+        seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+        seg_model.load_state_dict(seg_model_pretrained_dict, strict=False)
+        print("init seg weight from {}".format(args.pretrain_path_seg))   
+    seg_model.eval()
+    metric = []
+    args.sample_list = sorted(args.sample_list)
+    for case in tqdm(args.sample_list):
+        first_metric, second_metric, third_metric = inference_single_case(
+            case, seg_model, test_save_path, args, writer)
+        logging.info(f"{case}:[{first_metric}_{second_metric}_{third_metric}]")
+        case_metric = np.array([first_metric, second_metric, third_metric])
+        metric.append(case_metric)
+    metric = np.stack(metric)
+    #metric[metric==0.0] = np.nan
+    avg_metric = np.nanmean(metric,axis=0)
+    writer.close()
+    logging.info(f"cls_dice:{avg_metric}")
+    logging.info(f"dsc:{(avg_metric[0]+avg_metric[1]+avg_metric[2])/3}")
+    return avg_metric
+
 if __name__ == '__main__':
     args = parser.parse_args()
     args.patch_size = [args.patch_size,args.patch_size]
     args.config = get_config(args)
     args.test_mad = False
     args.root_path = "/home/grozta/Desktop/DATASET/ACDC"
-    current_mode = "Inference_seg_ema_model"
+    current_mode = "Inference_seg_model_genarate_new_dataset"
     
     if current_mode == "Inference_mad_model":
         args.test_mad = True
-        
         args.exp = "test/mad_model"
         args.labeled_num = 140
         args.patch_size = [256,256]
@@ -254,6 +325,14 @@ if __name__ == '__main__':
         args.pretrain_path_seg = "../data/pretrain/seg_model_ViM.pth"
         args.pretrain_path_mad = "../data/pretrain/mad_model_unet.pth"
         args.tag = "v1"
-        metric = Inference_seg_ema_model(args)      
+        metric = Inference_seg_ema_model(args)    
+        
+    if current_mode == "Inference_seg_model_genarate_new_dataset":
+        args.exp = "gen_new_dataset/seg_model"
+        args.patch_size = [224,224]
+        args.seg_model = "ViM_seg"
+        args.pretrain_path_seg = "../data/pretrain/seg_model_ViM.pth"
+        args.tag = "v1"
+        metric = Inference_seg_model_genarate_new_dataset(args)   
     print(metric)
     print((metric[0]+metric[1]+metric[2])/3)

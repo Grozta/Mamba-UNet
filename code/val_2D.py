@@ -13,7 +13,9 @@ from dataloaders.dataset import *
 from networks.net_factory import net_factory
 from networks.magicnet_2D import VNet_Magic_2D
 from networks.magicnet_2D_mask import VNet_Magic_2D_mask
-from train_fully_supervised_2D_trainLabel import config, args, patients_to_slices
+from utils.utils import patients_to_slices
+from utils.argparse_c import parser
+from config import get_config
 
 def calculate_metric_percase(pred, gt):
     pred[pred > 0] = 1
@@ -274,7 +276,7 @@ def test_mad_pretrain_model(args, snapshot_path):
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     
 
-    mad_model = net_factory(config, args, net_type=args.mad_model, in_chns=num_classes, class_num=num_classes)
+    mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=num_classes, class_num=num_classes)
     if os.path.exists(args.pretrain_path_mad):
         mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
         mad_model.load_state_dict(mad_model_pretrained_dict, strict=False)
@@ -305,6 +307,11 @@ def test_mad_pretrain_model(args, snapshot_path):
                     format(mean_dice, mean_hd95))
 
 if __name__ == "__main__":
+    args = parser.parse_args()
+    args.patch_size = [args.patch_size,args.patch_size]
+    args.config = get_config(args)
+    args.config = args.config
+    
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

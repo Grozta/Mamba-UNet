@@ -352,7 +352,7 @@
             }
         },
         {
-            "name": "test-mad_model",
+            "name": "test-model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/code/test_2D_fully.py",
@@ -361,9 +361,8 @@
             "justMyCode": false,
             "args": [
                 "--root_path", "/home/grozta/Desktop/DATASET/ACDC",
-                "--exp", "test/mad_model",
                 "--labeled_num", "140",
-                "--model_weight_path","../data/pretrain/mad_model_unet.pth"
+                "--tag","v1"
             ], // python test_2D_fully.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/Fully_Supervised --labeled_num 140
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",

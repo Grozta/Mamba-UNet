@@ -77,57 +77,41 @@ class BaseDataSets4v1(Dataset):
     def __init__(
         self,
         base_dir=None,
-        split="train",
-        num=None,
         transform=None,
-        ops_weak=None,
-        ops_strong=None,
+        num = 0,
+        args = None
     ):
         self._base_dir = base_dir
         self.sample_list = []
-        self.split = split
         self.transform = transform
-        self.ops_weak = ops_weak
-        self.ops_strong = ops_strong
+        self.num = num
+        self.args = args
+        self.used_pred_train = args.used_pred_train
 
-        assert bool(ops_weak) == bool(
-            ops_strong
-        ), "For using CTAugment learned policies, provide both weak and strong batch augmentation policy"
-
-        if self.split == "train":
-            with open(self._base_dir + "/train_slices.list", "r") as f1:
+        with open(self._base_dir + "/train_slices.list", "r") as f1:
                 self.sample_list = f1.readlines()
-            self.sample_list = [item.replace("\n", "") for item in self.sample_list]
-
-        elif self.split == "val":
-            with open(self._base_dir + "/val.list", "r") as f:
-                self.sample_list = f.readlines()
-            self.sample_list = [item.replace("\n", "") for item in self.sample_list]
-        if num is not None and self.split == "train":
-            self.sample_list = self.sample_list[:num]
+        self.sample_list = [item.replace("\n", "") for item in self.sample_list]
+        
+        random.shuffle(self.sample_list)
+        self.sample_list = self.sample_list[:self.num]
         print("total {} samples".format(len(self.sample_list)))
 
     def __len__(self):
         return len(self.sample_list)
-    """for label train
+    """
+    for label train
     """
     def __getitem__(self, idx):
         case = self.sample_list[idx]
-        if self.split == "train":
-            h5f = h5py.File(self._base_dir + "/data/slices/{}.h5".format(case), "r")
-        else:
-            h5f = h5py.File(self._base_dir + "/data/{}.h5".format(case), "r")
-        image = h5f["image"][:]
-        label = h5f["label"][:]
-        # print(image.shape, label.shape)
-        # print('*'*10)
-        sample = {"image": label.copy(), "label": label}
-        if self.split == "train":
-            if None not in (self.ops_weak, self.ops_strong):
-                sample = self.transform(sample, self.ops_weak, self.ops_strong)
-            else:
-                sample = self.transform(sample)
+        h5f = h5py.File(self._base_dir + "/data/slices/{}.h5".format(case), "r")
             
+        if len(self.used_pred_train):
+            image = h5f[self.used_pred_train][:]
+        else:
+            image = h5f["label"][:]
+        label = h5f["label"][:]
+        sample = {"image": image, "label": label}
+        sample = self.transform(sample)    
         sample["idx"] = idx
         return sample
 
@@ -524,16 +508,17 @@ class RandomGeneratorv3(object):
             
             image, label = resize_data(image, label,self.output_size)
             
-            self.gen_mask_param()
-            
-            rand = random.random()
-            if rand < 0.20:
-                image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-            elif rand < 0.85:
-                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-            else:
-                image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+            if random.random() > 0.5:
+                self.gen_mask_param()
+                
+                rand = random.random()
+                if rand < 0.20:
+                    image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+                elif rand < 0.85:
+                    image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+                else:
+                    image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+                    image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
             
             image, label = random_scale_2D(image,label)
 

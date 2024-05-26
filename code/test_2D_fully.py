@@ -9,10 +9,10 @@ import nibabel as nib
 import numpy as np
 import SimpleITK as sitk
 import torch
-from medpy import metric
 from scipy.ndimage import zoom
 from tqdm import tqdm
 from utils.argparse_c import parser
+from utils.utils import calculate_metric_percase
 
 from networks.net_factory import net_factory
 from dataloaders.dataset import RandomGeneratorv4, label2color
@@ -25,15 +25,7 @@ parser.add_argument('--model_weight_path', type=str,
 parser.add_argument('--save_test',default=False, 
                     action="store_true", help="save test label to filesystem")
 
-def calculate_metric_percase(pred, gt):
-    pred[pred > 0] = 1
-    gt[gt > 0] = 1
-    dice = metric.binary.dc(pred, gt)
-    # asd = metric.binary.asd(pred, gt)
-    # hd95 = metric.binary.hd95(pred, gt)
-    return dice
-    # , hd95
-    # , asd
+
 
 def inference_single_case(case, seg_model, test_save_path, args, writer= None):
     """直接将推理的结果保存在原图中

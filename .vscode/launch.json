@@ -367,6 +367,22 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }
+        },{
+            "name": "ACDC_mad_pred_train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/train_fully_supervised_2D_trainLabel_pretrain.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path", "/home/grozta/Desktop/DATASET/ACDC",
+                "--labeled_num", "140",
+                //"--used_pred_train","pred_vim_224"
+            ], // python train_fully_supervised_2D_trainLabel_pretrain.py --root_path /home/grozta/Desktop/DATASET/ACDC --tag v1.1_pred_vim_224 --labeled_num 140 --used_pred_train pred_vim_224
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
         }
     ]
 }

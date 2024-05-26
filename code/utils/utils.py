@@ -1,6 +1,7 @@
 import time
 import random
 from utils import ramps
+from medpy import metric
 
 # 定义一个装饰器函数
 def calculate_function_run_time(func_name):
@@ -42,6 +43,16 @@ def update_ema_variables(model, ema_model, alpha, global_step):
     alpha = min(1 - 1 / (global_step + 1), alpha)
     for ema_param, param in zip(ema_model.parameters(), model.parameters()):
         ema_param.data.mul_(alpha).add_(1 - alpha, param.data)  
+        
+def calculate_metric_percase(pred, gt):
+    pred[pred > 0] = 1
+    gt[gt > 0] = 1
+    dice = metric.binary.dc(pred, gt)
+    # asd = metric.binary.asd(pred, gt)
+    # hd95 = metric.binary.hd95(pred, gt)
+    return dice
+    # , hd95
+    # , asd
 
 if __name__ == "__main__":
     looper(5)

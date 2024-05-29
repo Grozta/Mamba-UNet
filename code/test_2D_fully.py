@@ -15,7 +15,8 @@ from utils.argparse_c import parser
 from utils.utils import calculate_metric_percase
 
 from networks.net_factory import net_factory
-from dataloaders.dataset import RandomGeneratorv4, label2color
+from dataloaders.dataset import RandomGeneratorv4
+from utils.utils import label2color
 from config import get_config
 
 parser.add_argument('--model', type=str,

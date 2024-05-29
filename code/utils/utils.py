@@ -1,5 +1,6 @@
 import time
 import random
+import numpy as np
 from utils import ramps
 from medpy import metric
 
@@ -53,6 +54,13 @@ def calculate_metric_percase(pred, gt):
     return dice
     # , hd95
     # , asd
+    
+def label2color(label,class_num=4):
+    color_img = np.zeros((label.shape[0],label.shape[1],3))
+    color_img[:,:,0][label==1]=1
+    color_img[:,:,1][label==2]=1
+    color_img[:,:,2][label==3]=1
+    return color_img
 
 if __name__ == "__main__":
     looper(5)

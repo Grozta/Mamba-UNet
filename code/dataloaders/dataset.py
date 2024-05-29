@@ -299,12 +299,6 @@ def image2binary(img, error_val = 1e-3, num_classes = 4):
     binary_images = np.stack(binary_images)
     return binary_images
 
-def label2color(label,class_num=4):
-    color_img = np.zeros((label.shape[0],label.shape[1],3))
-    color_img[:,:,0][label==1]=1
-    color_img[:,:,1][label==2]=1
-    color_img[:,:,2][label==3]=1
-    return color_img
 
 def np_soft_max(img):
     tensor_a = torch.from_numpy(img).unsqueeze(0)

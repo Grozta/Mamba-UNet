@@ -22,7 +22,7 @@ from tqdm import tqdm
 from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from utils.utils import calculate_metric_percase
+from utils.utils import calculate_metric_percase, label2color
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_label',default=True, 
@@ -77,11 +77,8 @@ def train(args, snapshot_path):
     batch_size = args.batch_size
     max_iterations = args.max_iterations
  
-    if args.train_label:
-        model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes)
-    else:
-        model = net_factory(None,args,net_type=args.model, in_chns=1, class_num=num_classes)
-        
+    model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes) 
+     
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     db_train = BaseDataSets4v1(base_dir=args.root_path,num=labeled_slice, transform=transforms.Compose([
         RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)]),args=args)
@@ -131,23 +128,21 @@ def train(args, snapshot_path):
 
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
-            writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
-            writer.add_scalar('info/loss_dice', loss_dice, iter_num)
+            writer.add_scalars('info/loss',{"total_loss":loss,
+                                            "loss_ce":loss_ce,
+                                            "loss_dice":loss_dice}, iter_num)
 
             logging.info(
                 'iteration %d : loss : %f, loss_ce: %f, loss_dice: %f' %
                 (iter_num, loss.item(), loss_ce.item(), loss_dice.item()))
 
             if iter_num % 20 == 0:
-                image = volume_batch[1, 0:1, :, :]
-                writer.add_image('train/Image', image* 50, iter_num)
-                outputs = torch.argmax(torch.softmax(
-                    outputs, dim=1), dim=1, keepdim=True)
-                writer.add_image('train/Prediction',
-                                 outputs[1, ...] * 50, iter_num)
-                labs = label_batch[1, ...].unsqueeze(0) * 50
-                writer.add_image('train/GroundTruth', labs, iter_num)
+                image = torch.argmax(volume_batch[1, ...], dim=0).cpu().numpy()
+                writer.add_image('train/Image', label2color(image), iter_num,dataformats='HWC')
+                outputs = torch.argmax(torch.softmax(outputs[1, ...], dim=0), dim=0).cpu().numpy()
+                writer.add_image('train/Prediction', label2color(outputs), iter_num,dataformats='HWC')
+                labs = label_batch[1, ...].cpu().numpy()
+                writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
             if iter_num > 0 and iter_num % 200 == 0:
                 model.eval()
@@ -155,7 +150,6 @@ def train(args, snapshot_path):
                 for i_batch, sampled_batch in enumerate(valloader):
                     val_image, val_label = sampled_batch['image'], sampled_batch['label']
                     val_image, val_label = val_image.cuda(), val_label.numpy()
-                    
                     outputs = model(val_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
                     first_metric = calculate_metric_percase(pred == 1, val_label == 1)
@@ -166,11 +160,12 @@ def train(args, snapshot_path):
                 metric_list = np.stack(metric_list)
                 #metric[metric==0.0] = np.nan
                 avg_metric = np.nanmean(metric_list,axis=0)
-
+                performance = np.mean(avg_metric)
+                
                 writer.add_scalars('info/val_dice',{"1":avg_metric[0],
                                                     "2":avg_metric[1],
-                                                    "3":avg_metric[2]}, iter_num)
-                performance = np.mean(avg_metric)
+                                                    "3":avg_metric[2],
+                                                    "avg_dice":performance}, iter_num)
 
                 if performance > best_performance:
                     best_performance = performance

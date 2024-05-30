@@ -22,7 +22,7 @@ from tqdm import tqdm
 from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from utils.utils import calculate_metric_percase, label2color
+from utils.utils import calculate_metric_percase, label2color, patients_to_slices
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_label',default=True, 
@@ -58,18 +58,9 @@ parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--used_pred_train',type=str,
                     default='label', help='this is a pred dict name')
+parser.add_argument('--image_need_mask',type= bool,
+                    default=False, help='input image need mask operation')
 args = parser.parse_args()
-
-
-def patients_to_slices(dataset, patiens_num):
-    ref_dict = None
-    if "ACDC" in dataset:
-        ref_dict = {"3": 68, "7": 136,
-                    "14": 256, "21": 396, "28": 512, "35": 664, "140": 1312}
-    else:
-        print("Error")
-    return ref_dict[str(patiens_num)]
-
 
 def train(args, snapshot_path):
     base_lr = args.base_lr
@@ -81,11 +72,11 @@ def train(args, snapshot_path):
      
     labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
     db_train = BaseDataSets4v1(base_dir=args.root_path,num=labeled_slice, transform=transforms.Compose([
-        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)]),args=args)
+        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True, is_mask= args.image_need_mask)]),args=args)
     
     val_num = patients_to_slices(args.root_path, args.val_num)
     db_val = BaseDataSets4v1(base_dir=args.root_path,num=val_num,transform=transforms.Compose([
-        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True)]), args=args)
+        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True, is_mask= args.image_need_mask)]), args=args)
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -158,7 +149,7 @@ def train(args, snapshot_path):
                     metric_i = np.array([first_metric,second_metric,third_metric])
                     metric_list.append(metric_i)
                 metric_list = np.stack(metric_list)
-                #metric[metric==0.0] = np.nan
+                metric_list[metric_list==None] = np.nan
                 avg_metric = np.nanmean(metric_list,axis=0)
                 performance = np.mean(avg_metric)
                 
@@ -180,7 +171,7 @@ def train(args, snapshot_path):
                 logging.info('iteration %d : mean_dice : %f' % (iter_num, performance))
                 model.train()
 
-            if iter_num % 4000 == 0:
+            if iter_num % 2000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)
@@ -210,6 +201,8 @@ if __name__ == "__main__":
 
     snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
         args.exp, args.labeled_num, args.model, args.tag)
+    if args.tag == "v99" and os.path.exists(snapshot_path):
+        shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code'):

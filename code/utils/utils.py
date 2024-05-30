@@ -46,6 +46,8 @@ def update_ema_variables(model, ema_model, alpha, global_step):
         ema_param.data.mul_(alpha).add_(1 - alpha, param.data)  
         
 def calculate_metric_percase(pred, gt):
+    if np.sum(gt)==0:
+        return None
     pred[pred > 0] = 1
     gt[gt > 0] = 1
     dice = metric.binary.dc(pred, gt)

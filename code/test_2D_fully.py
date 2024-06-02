@@ -257,9 +257,23 @@ def Inference_seg_ema_model(args):
     return avg_metric
 
 def Inference_seg_model_genarate_new_dataset(args):
-    with open(args.root_path + "/train_slices.list", "r") as f1:
-        args.sample_list = f1.readlines()
-    args.sample_list = [item.replace("\n", "") for item in args.sample_list]
+    only_train = False
+    args.sample_list=[]
+    if only_train:
+        with open(args.root_path + "/train_slices.list", "r") as f1:
+            args.sample_list = f1.readlines()
+        args.sample_list = [item.replace("\n", "") for item in args.sample_list]
+    else:
+        with open(args.root_path + "/val_slices.list", "r") as f1:
+            sample_list = f1.readlines()
+            for item in sample_list:
+                i = item.replace("\n", "")
+                args.sample_list.append(i)
+        with open(args.root_path + "/test_slices.list", "r") as f1:
+            sample_list = f1.readlines()
+            for item in sample_list:
+                i = item.replace("\n", "")
+                args.sample_list.append(i)
     print("total {} samples".format(len(args.sample_list)))
     test_save_path = "../model/{}_{}_labeled/{}_{}".format(    
         args.exp, args.labeled_num, args.model, args.tag)
@@ -286,7 +300,7 @@ def Inference_seg_model_genarate_new_dataset(args):
         case_metric = np.array([first_metric, second_metric, third_metric])
         metric.append(case_metric)
     metric = np.stack(metric)
-    #metric[metric==0.0] = np.nan
+    metric[metric==None] = np.nan
     avg_metric = np.nanmean(metric,axis=0)
     writer.close()
     logging.info(f"cls_dice:{avg_metric}")
@@ -298,7 +312,7 @@ if __name__ == '__main__':
     args.patch_size = [args.patch_size,args.patch_size]
     args.config = get_config(args)
     args.test_mad = False
-    args.root_path = "/home/grozta/Desktop/DATASET/ACDC"
+    args.root_path = "/media/grozta/SOYO/DATASET/ACDC"
     current_mode = "Inference_seg_model_genarate_new_dataset"
     
     # 测试mad的恢复效果
@@ -327,7 +341,7 @@ if __name__ == '__main__':
         args.patch_size = [224,224]
         args.seg_model = "ViM_seg"
         args.pretrain_path_seg = "../data/pretrain/seg_model_ViM.pth"
-        args.tag = "v1"
+        args.tag = "v2"
         metric = Inference_seg_model_genarate_new_dataset(args)   
     print(metric)
     print((metric[0]+metric[1]+metric[2])/3)

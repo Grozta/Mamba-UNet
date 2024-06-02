@@ -90,11 +90,11 @@ def test_pretrain(args, snapshot_path):
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             
             image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
-            writer.add_image(f'test{pth}/Image', label2color(image), i_batch,dataformats='HWC')
+            writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
             prediction = pred[0]
-            writer.add_image(f'test{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
+            writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
             labs = test_label[0, ...]
-            writer.add_image(f'test{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
+            writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
 
             first_metric = calculate_metric_percase(prediction == 1, labs == 1)
             second_metric = calculate_metric_percase(prediction == 2, labs == 2)
@@ -108,7 +108,7 @@ def test_pretrain(args, snapshot_path):
         metric_list = np.stack(metric_list)
         performance = np.nanmean(metric_list,axis=0)
         logging.info(f'{pth}_metric :{performance}' )
-        writer.add_histogram(f'test/{pth}/performance',performance,0)
+        writer.add_text(f'test/performance',f"{pth}:"+str(performance),iter_num)
 
 def train(args, snapshot_path):
     base_lr = args.base_lr
@@ -124,9 +124,6 @@ def train(args, snapshot_path):
     
     db_val = BaseDataSets4pretrain(args,mode = "val",
                                    transform=transforms.Compose([RandomGeneratorv3(args)]))
-    
-    db_test = BaseDataSets4pretrain(args,mode = "test",
-                                   transform=transforms.Compose([RandomGeneratorv3(args)]))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -134,7 +131,6 @@ def train(args, snapshot_path):
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True,
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
     valloader = DataLoader(db_val, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
-    testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
 
     model.train()
 
@@ -228,16 +224,18 @@ def train(args, snapshot_path):
                 
                 if performance[0] > best_performance:
                     best_performance = performance[0]
-                    
+                    writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
                     save_best = os.path.join(snapshot_path,
                                              '{}_best_model.pth'.format(args.model))
                     torch.save(model.state_dict(), save_best)
+                    logging.info("save_best_model to {}".format(save_best))
                     
                     if iter_num >len(trainloader)*80:
                         save_mode_path = os.path.join(snapshot_path,
                                                   'iter_{}_dice_{}.pth'.format(
                                                       iter_num, round(best_performance, 4)))
                         torch.save(model.state_dict(), save_mode_path)
+                        logging.info("save_best_iter_model to {}".format(save_mode_path))
                     
                 model.train()
 

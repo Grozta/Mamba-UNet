@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 from dataloaders import utils
 from config import get_config
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv4
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4pretrain, RandomGeneratorv4
 from networks.net_factory import net_factory
 from networks.unet import initialize_module
 from utils import losses, metrics, ramps

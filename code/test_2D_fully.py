@@ -301,6 +301,7 @@ if __name__ == '__main__':
     args.root_path = "/home/grozta/Desktop/DATASET/ACDC"
     current_mode = "Inference_seg_model_genarate_new_dataset"
     
+    # 测试mad的恢复效果
     if current_mode == "Inference_mad_model":
         args.test_mad = True
         args.exp = "test/mad_model"
@@ -309,6 +310,7 @@ if __name__ == '__main__':
         args.tag = "v1"
         metric = Inference_mad_model(args)
         
+    # 将seg的输出直接给ema，测试该过程的修复效果
     if current_mode == "Inference_seg_ema_model":
         args.exp = "test/seg_ema_model"
         args.labeled_num = 140
@@ -319,7 +321,7 @@ if __name__ == '__main__':
         args.pretrain_path_mad = "../data/pretrain/mad_model_unet.pth"
         args.tag = "v1"
         metric = Inference_seg_ema_model(args)    
-        
+    # 通过seg产生预测结果，并将结果保存在数据集中
     if current_mode == "Inference_seg_model_genarate_new_dataset":
         args.exp = "gen_new_dataset/seg_model"
         args.patch_size = [224,224]

@@ -19,14 +19,12 @@ from torchvision import transforms
 from torchvision.utils import make_grid
 from tqdm import tqdm
 
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4v1, RandomGeneratorv3
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4pretrain, RandomGeneratorv3
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from utils.utils import calculate_metric_percase, label2color, patients_to_slices
+from utils.utils import calculate_metric_percase, label2color, get_pth_files
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_label',default=True, 
-                    action="store_true", help="train label mode")
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
@@ -37,6 +35,8 @@ parser.add_argument('--model', type=str,
                     default='unet', help='model_name')
 parser.add_argument('--pretrain_path', type=str,
                     default='../data/pretrain/xxxx.pth', help='pretrain model path')
+parser.add_argument('--input_channels', type=int,  default=4,
+                    help='Number of input channels about network')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
@@ -56,34 +56,85 @@ parser.add_argument('--val_num', type=int, default=7,
                     help='valset patient num')
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
-parser.add_argument('--used_pred_train',type=str,
-                    default='label', help='this is a pred dict name')
-parser.add_argument('--image_need_mask',type= bool,
-                    default=False, help='input image need mask operation')
+parser.add_argument('--image_source',type=str,
+                    default='label', help='The field name of the image source.options:[label,pred_vim_224]')
+parser.add_argument('--image_need_trans',default=False, 
+                    action="store_true", help="The image needs to be transformed")
+parser.add_argument('--image_need_mask',default=False, 
+                    action="store_true", help='input image need mask operation')
+parser.add_argument('--image_noise',type=float,  
+                    default=0.001, help='input image need mask operation')
+parser.add_argument('--end2Test',default=False, 
+                    action="store_true", help='Test at the end of training')
 args = parser.parse_args()
+
+def test_pretrain(args, snapshot_path):
+    writer = args.writer
+    model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes)
+    db_test = BaseDataSets4pretrain(args,mode = "test",
+                                   transform=transforms.Compose([RandomGeneratorv3(args)])) 
+    testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
+    pth_list = get_pth_files(snapshot_path)
+    iterator = tqdm(range(len(pth_list)), ncols=70)
+    metric_list = []
+    for iter_num in iterator:
+        pth = pth_list[iter_num]
+        model_pretrained_dict = torch.load(os.path.join(snapshot_path,pth))
+        model.load_state_dict(model_pretrained_dict)
+        model.eval()
+        metric_list = []
+        for i_batch, sampled_batch in enumerate(testloader):
+            test_image, test_label = sampled_batch['image'], sampled_batch['label']
+            test_image, test_label = test_image.cuda(), test_label.numpy()
+            outputs = model(test_image)
+            pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
+            
+            image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
+            writer.add_image(f'test{pth}/Image', label2color(image), i_batch,dataformats='HWC')
+            prediction = pred[0]
+            writer.add_image(f'test{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
+            labs = test_label[0, ...]
+            writer.add_image(f'test{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
+
+            first_metric = calculate_metric_percase(prediction == 1, labs == 1)
+            second_metric = calculate_metric_percase(prediction == 2, labs == 2)
+            third_metric = calculate_metric_percase(prediction == 3, labs == 3)
+            metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
+            metric_i[metric_i==None] = np.nan
+            if not np.all(np.isnan(metric_i.astype(float))):
+                metric_i = np.nanmean(metric_i,axis=0)#1x2
+                metric_list.append(metric_i)
+            
+        metric_list = np.stack(metric_list)
+        performance = np.nanmean(metric_list,axis=0)
+        logging.info(f'{pth}_metric :{performance}' )
+        writer.add_histogram(f'test/{pth}/performance',performance,0)
 
 def train(args, snapshot_path):
     base_lr = args.base_lr
     num_classes = args.num_classes
     batch_size = args.batch_size
     max_iterations = args.max_iterations
+    writer = args.writer
  
-    model = net_factory(None,args,net_type=args.model, in_chns=num_classes, class_num=num_classes) 
+    model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes) 
      
-    labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
-    db_train = BaseDataSets4v1(base_dir=args.root_path,num=labeled_slice, transform=transforms.Compose([
-        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True, is_mask= args.image_need_mask)]),args=args)
+    db_train = BaseDataSets4pretrain(args,mode = "train", 
+                                     transform=transforms.Compose([RandomGeneratorv3(args)]))
     
-    val_num = patients_to_slices(args.root_path, args.val_num)
-    db_val = BaseDataSets4v1(base_dir=args.root_path,num=val_num,transform=transforms.Compose([
-        RandomGeneratorv3(args.patch_size,args.num_classes, is_train= True, is_mask= args.image_need_mask)]), args=args)
+    db_val = BaseDataSets4pretrain(args,mode = "val",
+                                   transform=transforms.Compose([RandomGeneratorv3(args)]))
+    
+    db_test = BaseDataSets4pretrain(args,mode = "test",
+                                   transform=transforms.Compose([RandomGeneratorv3(args)]))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
 
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True,
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
-    valloader = DataLoader(db_val, batch_size=1, shuffle=False,num_workers =args.num_workers)
+    valloader = DataLoader(db_val, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
+    testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
 
     model.train()
 
@@ -92,7 +143,7 @@ def train(args, snapshot_path):
     ce_loss = CrossEntropyLoss()
     dice_loss = losses.DiceLoss(num_classes)
 
-    writer = SummaryWriter(snapshot_path + '/log')
+    
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
     iter_num = 0
@@ -135,43 +186,62 @@ def train(args, snapshot_path):
                 labs = label_batch[1, ...].cpu().numpy()
                 writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
-            if iter_num > 0 and iter_num % 200 == 0:
+            if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
                 model.eval()
                 metric_list = []
+                display_image = []
+                random_number = np.random.randint(0, len(valloader))
                 for i_batch, sampled_batch in enumerate(valloader):
-                    val_image, val_label = sampled_batch['image'], sampled_batch['label']
-                    val_image, val_label = val_image.cuda(), val_label.numpy()
-                    outputs = model(val_image)
+                    test_image, test_label = sampled_batch['image'], sampled_batch['label']
+                    test_image, test_label = test_image.cuda(), test_label.numpy()
+                    outputs = model(test_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
-                    first_metric = calculate_metric_percase(pred == 1, val_label == 1)
-                    second_metric = calculate_metric_percase(pred == 2, val_label == 2)
-                    third_metric = calculate_metric_percase(pred == 3, val_label == 3)
+                    if i_batch == random_number:
+                        image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
+                        writer.add_image('val/Image', label2color(image), iter_num,dataformats='HWC')
+                        prediction = pred[0]
+                        writer.add_image('val/Prediction', label2color(prediction), iter_num,dataformats='HWC')
+                        labs = test_label[0, ...]
+                        writer.add_image('val/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
+                    pred = pred[0,...]
+                    test_label = test_label[0,...]
+                    first_metric = calculate_metric_percase(pred == 1, test_label == 1)
+                    second_metric = calculate_metric_percase(pred == 2, test_label == 2)
+                    third_metric = calculate_metric_percase(pred == 3, test_label == 3)
                     metric_i = np.array([first_metric,second_metric,third_metric])
                     metric_list.append(metric_i)
                 metric_list = np.stack(metric_list)
                 metric_list[metric_list==None] = np.nan
                 avg_metric = np.nanmean(metric_list,axis=0)
-                performance = np.mean(avg_metric)
+                performance = np.mean(avg_metric,axis=0)
                 
-                writer.add_scalars('info/val_dice',{"1":avg_metric[0],
-                                                    "2":avg_metric[1],
-                                                    "3":avg_metric[2],
-                                                    "avg_dice":performance}, iter_num)
-
-                if performance > best_performance:
-                    best_performance = performance
-                    save_mode_path = os.path.join(snapshot_path,
-                                                  'iter_{}_dice_{}.pth'.format(
-                                                      iter_num, round(best_performance, 4)))
+                logging.info(f'iteration: {iter_num} performance_list :\n {avg_metric}')
+                logging.info(f'iteration: {iter_num} mean_performance : {performance}')
+                writer.add_scalars('info/val_dice',{"1":avg_metric[0][0],
+                                                    "2":avg_metric[1][0],
+                                                    "3":avg_metric[2][0],
+                                                    "avg_dice":performance[0]}, iter_num)
+                writer.add_scalars('info/val_hd95',{"1":avg_metric[0][1],
+                                                    "2":avg_metric[1][1],
+                                                    "3":avg_metric[2][1],
+                                                    "avg_hd95":performance[1]}, iter_num)
+                
+                if performance[0] > best_performance:
+                    best_performance = performance[0]
+                    
                     save_best = os.path.join(snapshot_path,
                                              '{}_best_model.pth'.format(args.model))
-                    torch.save(model.state_dict(), save_mode_path)
                     torch.save(model.state_dict(), save_best)
-
-                logging.info('iteration %d : mean_dice : %f' % (iter_num, performance))
+                    
+                    if iter_num >len(trainloader)*80:
+                        save_mode_path = os.path.join(snapshot_path,
+                                                  'iter_{}_dice_{}.pth'.format(
+                                                      iter_num, round(best_performance, 4)))
+                        torch.save(model.state_dict(), save_mode_path)
+                    
                 model.train()
 
-            if iter_num % 2000 == 0:
+            if iter_num % (len(trainloader)*40) == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)
@@ -182,10 +252,18 @@ def train(args, snapshot_path):
         if iter_num >= max_iterations:
             iterator.close()
             break
-    writer.close()
+    
+
     return "Training Finished!"
 
-
+"""
+训练mad模型
+输入情况有4种:
+- 原始的label经过mask,作为模型输入 图像的通道数是4  关键参数--image_source label --image_need_mask True
+- seg的推理结果作为label,不使用mask,作为模型输入 图像的通道数是4  关键参数--image_source pred_vim_224 --image_need_mask False
+- seg的推理结果作为label,经过mask,作为模型输入 图像的通道数是4  关键参数--image_source pred_vim_224 --image_need_mask True
+- 原始的label不经过变换 图像的通道数是1 --image_need_trans True
+"""
 if __name__ == "__main__":
     if not args.deterministic:
         cudnn.benchmark = True
@@ -214,4 +292,8 @@ if __name__ == "__main__":
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
+    args.writer = SummaryWriter(snapshot_path + '/log')
     train(args, snapshot_path)
+    if args.end2Test:
+        test_pretrain(args, snapshot_path)
+    args.writer.close()

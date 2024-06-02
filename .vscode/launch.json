@@ -377,9 +377,15 @@
             "justMyCode": false,
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
-                "--labeled_num", "140",
-                //"--used_pred_train","pred_vim_224"
-            ], // python train_fully_supervised_2D_trainLabel_pretrain.py --root_path /home/grozta/Desktop/DATASET/ACDC --tag v1.1_pred_vim_224 --labeled_num 140 --used_pred_train pred_vim_224
+                "--model","unet",
+                "--input_channels","4",
+                "--image_source","label",
+                "--image_need_trans",
+                "--image_need_mask",
+                "--image_noise","0.001",
+                "--max_iterations","400",
+                "--end2Test"
+            ], // python train_fully_supervised_2D_trainLabel_pretrain.py --root_path /media/grozta/SOYO/DATASET/ACDC --tag v2.0 --model unet --input_channels 4 --image_source label --image_need_trans --image_need_mask --image_noise 0.001 --end2Test
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }

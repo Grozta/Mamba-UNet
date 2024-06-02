@@ -4,6 +4,7 @@ import torch
 import random
 import numpy as np
 from glob import glob
+import logging
 from torch.utils.data import Dataset
 import h5py
 from scipy.ndimage import zoom
@@ -73,28 +74,20 @@ class BaseDataSets(Dataset):
         sample["idx"] = idx
         return sample
 
-class BaseDataSets4v1(Dataset):
-    def __init__(
-        self,
-        base_dir=None,
-        transform=None,
-        num = 0,
-        args = None
-    ):
-        self._base_dir = base_dir
+class BaseDataSets4pretrain(Dataset):
+    def __init__(self,args ,transform=None,mode = "train"):
         self.sample_list = []
         self.transform = transform
-        self.num = num
+        self.mode = mode
         self.args = args
-        self.used_pred_train = args.used_pred_train
 
-        with open(self._base_dir + "/train_slices.list", "r") as f1:
+        with open(self.args.root_path + f"/{self.mode}_slices.list", "r") as f1:
                 self.sample_list = f1.readlines()
         self.sample_list = [item.replace("\n", "") for item in self.sample_list]
         
         random.shuffle(self.sample_list)
-        self.sample_list = self.sample_list[:self.num]
         print("total {} samples".format(len(self.sample_list)))
+        logging.info(f"image source from {self.args.image_source}")
 
     def __len__(self):
         return len(self.sample_list)
@@ -103,10 +96,11 @@ class BaseDataSets4v1(Dataset):
     """
     def __getitem__(self, idx):
         case = self.sample_list[idx]
-        h5f = h5py.File(self._base_dir + "/data/slices/{}.h5".format(case), "r")
+        case_path = self.args.root_path + "/data/slices/{}.h5".format(case)
+        h5f = h5py.File(case_path, "r")
             
-        if len(self.used_pred_train):
-            image = h5f[self.used_pred_train][:]
+        if len(self.args.image_source):
+            image = h5f[self.args.image_source][:]
         else:
             image = h5f["label"][:]
         label = h5f["label"][:]
@@ -460,10 +454,10 @@ class RandomGeneratorv2(object):
 class RandomGeneratorv3(object):
     """for label train 
     """
-    def __init__(self, output_size, num_classes = 4,is_train = True, is_mask = True):
-        self.output_size = output_size
-        self.num_classes = num_classes
-        self.is_train = is_train
+    def __init__(self, args):
+        self.output_size = args.patch_size
+        self.num_classes = args.num_classes
+        self.image_need_trans = args.image_need_trans
         self.puzzle_mask_exe_rate = 0.2
         self.puzzle_mask_mask_rate = 0.25
         self.puzzle_mask_mask_size = (8,8)
@@ -477,7 +471,8 @@ class RandomGeneratorv3(object):
         self.edge_mask_total = (1,4)
         self.val = -1
         self.val_list=[-1,0]
-        self.is_mask = is_mask
+        self.image_need_mask = args.image_need_mask
+        self.error_val = args.image_noise
         
     def gen_mask_param(self):
         puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
@@ -493,17 +488,16 @@ class RandomGeneratorv3(object):
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
+        if random.random() > 0.5:
+            image, label = random_rot_flip(image, label)
+            
+        if random.random() > 0.5:
+            image, label = random_rotate(image, label)
         
-        if self.is_train:
-            if random.random() > 0.5:
-                image, label = random_rot_flip(image, label)
-                
-            if random.random() > 0.5:
-                image, label = random_rotate(image, label)
-            
-            image, label = resize_data(image, label,self.output_size)
-            
-            if self.is_mask:    
+        image, label = resize_data(image, label,self.output_size)
+        
+        if self.image_need_trans:
+            if self.image_need_mask:    
                 if random.random() > 0.5:
                     self.gen_mask_param()
                     
@@ -519,14 +513,14 @@ class RandomGeneratorv3(object):
             image, label = random_scale_2D(image,label)
 
             image, label = random_crop_2D(image,label,self.output_size)
+            image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
+        
+            image = np_soft_max(image)
+            
+            image = torch.from_numpy(image.astype(np.float32))
         else:
-            image, label = resize_data(image, label,self.output_size)
+            image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
         
-        image = image2binary(image,num_classes=self.num_classes)
-        
-        image = np_soft_max(image)
-        
-        image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
         return sample

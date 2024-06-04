@@ -58,12 +58,14 @@ parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--image_source',type=str,
                     default='label', help='The field name of the image source.options:[label,pred_vim_224]')
+parser.add_argument('--image_need_fusion',default=False, 
+                    action="store_true", help="Need to fuse image and pred as input")
 parser.add_argument('--image_need_trans',default=False, 
                     action="store_true", help="The image needs to be transformed")
 parser.add_argument('--image_need_mask',default=False, 
                     action="store_true", help='input image need mask operation')
 parser.add_argument('--image_noise',type=float,  
-                    default=0.001, help='input image need mask operation')
+                    default=0.001, help='Noise added when converting to binary image')
 parser.add_argument('--end2Test',default=False, 
                     action="store_true", help='Test at the end of training')
 args = parser.parse_args()
@@ -89,8 +91,17 @@ def test_pretrain(args, snapshot_path):
             outputs = model(test_image)
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             
-            image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
-            writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
+            if args.input_channels == 2:
+                image_origin  = test_image[0,...].cpu().numpy()
+                writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                writer.add_image('val/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
+            elif args.input_channels == 1:
+                image = test_image[0,0, ...].cpu().numpy()
+                writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
+            else:
+                image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
+                writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
+                
             prediction = pred[0]
             writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
             labs = test_label[0, ...]
@@ -175,11 +186,20 @@ def train(args, snapshot_path):
                 (iter_num, loss.item(), loss_ce.item(), loss_dice.item()))
 
             if iter_num % 20 == 0:
-                image = torch.argmax(volume_batch[1, ...], dim=0).cpu().numpy()
-                writer.add_image('train/Image', label2color(image), iter_num,dataformats='HWC')
-                outputs = torch.argmax(torch.softmax(outputs[1, ...], dim=0), dim=0).cpu().numpy()
+                if args.input_channels == 2:
+                    image_origin  = volume_batch[0,...].cpu().numpy()
+                    writer.add_image('train/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                    writer.add_image('train/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
+                elif args.input_channels == 1:
+                    image = volume_batch[0,0,...].cpu().numpy()
+                    writer.add_image('train/Image', label2color(image), iter_num,dataformats='HWC')
+                else:
+                    image = torch.argmax(volume_batch[0, ...], dim=0).cpu().numpy()
+                    writer.add_image('train/Image', label2color(image), iter_num,dataformats='HWC')
+
+                outputs = torch.argmax(torch.softmax(outputs[0, ...], dim=0), dim=0).cpu().numpy()
                 writer.add_image('train/Prediction', label2color(outputs), iter_num,dataformats='HWC')
-                labs = label_batch[1, ...].cpu().numpy()
+                labs = label_batch[0, ...].cpu().numpy()
                 writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
             if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
@@ -193,8 +213,17 @@ def train(args, snapshot_path):
                     outputs = model(test_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
                     if i_batch == random_number:
-                        image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
-                        writer.add_image('val/Image', label2color(image), iter_num,dataformats='HWC')
+                        if args.input_channels == 2:
+                            image_origin  = test_image[0,...].cpu().numpy()
+                            writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                            writer.add_image('val/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
+                        elif args.input_channels == 1:
+                            image = test_image[0,0, ...].cpu().numpy()
+                            writer.add_image('val/Image', label2color(image), iter_num,dataformats='HWC')
+                        else:
+                            image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
+                            writer.add_image('val/Image', label2color(image), iter_num,dataformats='HWC')
+                            
                         prediction = pred[0]
                         writer.add_image('val/Prediction', label2color(prediction), iter_num,dataformats='HWC')
                         labs = test_label[0, ...]

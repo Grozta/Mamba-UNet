@@ -378,12 +378,9 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--model","unet",
-                "--input_channels","4",
-                "--image_source","label",
-                "--image_need_trans",
-                "--image_need_mask",
-                "--image_noise","0.001",
-                "--max_iterations","400",
+                "--input_channels","2",
+                "--image_source","pred_vim_224",
+                "--image_need_fusion",
                 "--end2Test"
             ], // python train_fully_supervised_2D_trainLabel_pretrain.py --root_path /media/grozta/SOYO/DATASET/ACDC --tag v2.0 --model unet --input_channels 4 --image_source label --image_need_trans --image_need_mask --image_noise 0.001 --end2Test
             "env": {

@@ -104,7 +104,7 @@ class BaseDataSets4pretrain(Dataset):
         else:
             image = h5f["label"][:]
         label = h5f["label"][:]
-        sample = {"image": image, "label": label}
+        sample = {"image": image, "label": label, "origin_img":h5f["image"][:]}
         sample = self.transform(sample)    
         sample["idx"] = idx
         return sample
@@ -457,7 +457,7 @@ class RandomGeneratorv3(object):
     def __init__(self, args):
         self.output_size = args.patch_size
         self.num_classes = args.num_classes
-        self.image_need_trans = args.image_need_trans
+        
         self.puzzle_mask_exe_rate = 0.2
         self.puzzle_mask_mask_rate = 0.25
         self.puzzle_mask_mask_size = (8,8)
@@ -471,7 +471,9 @@ class RandomGeneratorv3(object):
         self.edge_mask_total = (1,4)
         self.val = -1
         self.val_list=[-1,0]
+        self.image_need_trans = args.image_need_trans
         self.image_need_mask = args.image_need_mask
+        self.image_need_fusion = args.image_need_fusion
         self.error_val = args.image_noise
         
     def gen_mask_param(self):
@@ -488,15 +490,25 @@ class RandomGeneratorv3(object):
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
-        if random.random() > 0.5:
-            image, label = random_rot_flip(image, label)
+        if self.image_need_fusion:
+            image, label = resize_data(image, label,self.output_size)
+            origin_img, _ = resize_data(sample["origin_img"], sample["origin_img"],self.output_size)
+            image = np.stack([origin_img,image],axis=0)
+        else:
+            if self.image_need_trans:
+                if random.random() > 0.5:
+                    image, label = random_rot_flip(image, label)
+                    
+                if random.random() > 0.5:
+                    image, label = random_rotate(image, label)
+                    
+                image, label = random_scale_2D(image,label)
+
+                image, label = random_crop_2D(image,label,self.output_size)
+                
+            image, label = resize_data(image, label,self.output_size)
             
-        if random.random() > 0.5:
-            image, label = random_rotate(image, label)
-        
-        image, label = resize_data(image, label,self.output_size)
-        
-        if self.image_need_trans:
+
             if self.image_need_mask:    
                 if random.random() > 0.5:
                     self.gen_mask_param()
@@ -509,18 +521,16 @@ class RandomGeneratorv3(object):
                     else:
                         image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
                         image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-            
-            image, label = random_scale_2D(image,label)
 
-            image, label = random_crop_2D(image,label,self.output_size)
-            image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
-        
-            image = np_soft_max(image)
+                image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
             
-            image = torch.from_numpy(image.astype(np.float32))
-        else:
-            image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
-        
+                image = np_soft_max(image)
+                
+            else:
+                if len(image.shape) == 2:
+                    image = np.expand_dims(image, axis=0)
+    
+        image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
         return sample

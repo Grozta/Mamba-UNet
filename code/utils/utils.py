@@ -91,5 +91,15 @@ def label2color(label,class_num=4):
     color_img[:,:,2][label==3]=1
     return color_img
 
+def get_image_fusion_mode(mode):
+    ref_dict = {"0": "不使用图像融合", 
+                "1": "seg_pred + image作为输入,dim=2", 
+                "2": "label + image作为输入,dim=2", 
+                "3": "label进行二值化 + image作为输入,dim=5", 
+                "4": "label进行二值化,mask + image作为输入,dim=5",
+                "5": "pred进行二值化+ image作为输入,dim=5", 
+                }
+    return ref_dict[str(mode)]
+
 if __name__ == "__main__":
     looper(5)

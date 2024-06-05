@@ -58,8 +58,8 @@ parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--image_source',type=str,
                     default='label', help='The field name of the image source.options:[label,pred_vim_224]')
-parser.add_argument('--image_need_fusion',default=False, 
-                    action="store_true", help="Need to fuse image and pred as input")
+parser.add_argument('--image_fusion_mode',type=int, default=0,
+                    help='Image fusion mode.options:[0,1,2,3,4,5]')
 parser.add_argument('--image_need_trans',default=False, 
                     action="store_true", help="The image needs to be transformed")
 parser.add_argument('--image_need_mask',default=False, 
@@ -90,11 +90,14 @@ def test_pretrain(args, snapshot_path):
             test_image, test_label = test_image.cuda(), test_label.numpy()
             outputs = model(test_image)
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
-            
-            if args.input_channels == 2:
+            if args.image_fusion_mode in [3,4,5]:
                 image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
-                writer.add_image('val/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
+                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
+            elif args.image_fusion_mode in [1,2]:
+                image_origin  = test_image[0,...].cpu().numpy()
+                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                writer.add_image(f'test_{pth}/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
             elif args.input_channels == 1:
                 image = test_image[0,0, ...].cpu().numpy()
                 writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
@@ -186,7 +189,11 @@ def train(args, snapshot_path):
                 (iter_num, loss.item(), loss_ce.item(), loss_dice.item()))
 
             if iter_num % 20 == 0:
-                if args.input_channels == 2:
+                if args.image_fusion_mode in [3,4,5]:
+                    image_origin  = volume_batch[0,...].cpu().numpy()
+                    writer.add_image('train/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                    writer.add_image('train/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
+                elif args.image_fusion_mode in [1,2]:
                     image_origin  = volume_batch[0,...].cpu().numpy()
                     writer.add_image('train/Image_origin', image_origin[0], iter_num, dataformats='HW')
                     writer.add_image('train/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
@@ -213,7 +220,11 @@ def train(args, snapshot_path):
                     outputs = model(test_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
                     if i_batch == random_number:
-                        if args.input_channels == 2:
+                        if args.image_fusion_mode in [3,4,5]:
+                            image_origin  = test_image[0,...].cpu().numpy()
+                            writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
+                            writer.add_image('val/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
+                        elif args.image_fusion_mode in [1,2]:
                             image_origin  = test_image[0,...].cpu().numpy()
                             writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
                             writer.add_image('val/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')

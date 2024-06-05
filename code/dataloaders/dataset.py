@@ -16,6 +16,7 @@ import augmentations
 from augmentations.ctaugment import OPS
 import matplotlib.pyplot as plt
 from PIL import Image
+from utils.utils import get_image_fusion_mode
 
 
 class BaseDataSets(Dataset):
@@ -86,8 +87,10 @@ class BaseDataSets4pretrain(Dataset):
         self.sample_list = [item.replace("\n", "") for item in self.sample_list]
         
         random.shuffle(self.sample_list)
-        print("total {} samples".format(len(self.sample_list)))
-        logging.info(f"image source from {self.args.image_source}")
+        logging.info(f"total {len(self.sample_list)} samples")
+        logging.info(f"Dataset {mode} image source from {self.args.image_source}")
+        self.fusion_mode = get_image_fusion_mode(self.args.image_fusion_mode)
+        logging.info(f"Dataset {mode} input image fusion mode: {self.fusion_mode}")
 
     def __len__(self):
         return len(self.sample_list)
@@ -170,6 +173,24 @@ def random_crop_2D(image, label, output_size=(256, 256)):
     
     return  image, label
 
+def random_crop_2D_list(images, output_size=(256, 256)):
+    # pad the sample if necessary
+    if images[0].shape[0] <= output_size[0] or images[0].shape[1] <= output_size[1] :
+        pw = max((output_size[0] - images[0].shape[0]) // 2 + 3, 0)
+        ph = max((output_size[1] - images[0].shape[1]) // 2 + 3, 0)
+        
+        for idx, image in enumerate(images):
+            images[idx] = np.pad(image, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+        
+    (w, h) = images[0].shape
+    w1 = np.random.randint(0, w - output_size[0])
+    h1 = np.random.randint(0, h - output_size[1])
+    res_imgs = []    
+    for image in images:
+        image = image[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+        res_imgs.append(image)
+    return res_imgs
+
 def random_crop_2D_mask(image, label, mask_label, output_size=(256, 256)):
 
     # pad the sample if necessary
@@ -199,6 +220,15 @@ def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
 
     return  image, label
 
+def random_scale_2D_list(images):
+    random_scale = np.random.uniform(0.8, 1.2)
+    x, y = images[0].shape
+    res_imgs = []
+    for image in images:
+        image = zoom(image, random_scale, order=0)
+        res_imgs.append(image)
+    return tuple(res_imgs)
+
 def random_scale_2D_mask( image, label, mask_label, scale_range=(0.8, 1.2)):
     random_scale = np.random.uniform(0.8, 1.2)
     x, y = image.shape
@@ -217,6 +247,14 @@ def resize_data(image, label,output_size=(256, 256)):
         label = zoom(label, (output_size[0] / x, output_size[1] / y), order=0)      
         
     return image, label
+
+def resize_data_list(images,output_size=(256, 256)):
+    x, y = images[0].shape[-2], images[0].shape[-1]
+    res_imgs = []
+    for image in images:
+        image = zoom(image, (output_size[0] / x, output_size[1] / y), order=0)   
+        res_imgs.append(image)
+    return tuple(res_imgs)
 
 def random_mask(image, label, mask_rate=0.25):
     tensor_ = np.random.rand(image.shape)
@@ -333,8 +371,9 @@ class ToTensor(object):
 
 def random_rot_flip(image, label=None):
     k = np.random.randint(0, 4)
-    image = np.rot90(image, k)
     axis = np.random.randint(0, 2)
+    
+    image = np.rot90(image, k)
     image = np.flip(image, axis=axis).copy()
     if label is not None:
         label = np.rot90(label, k)
@@ -343,12 +382,29 @@ def random_rot_flip(image, label=None):
     else:
         return image
 
+def random_rot_flip_list(images):
+    k = np.random.randint(0, 4)
+    axis = np.random.randint(0, 2)
+    res_imgs = []
+    for img in images:
+        img = np.rot90(img, k)
+        img = np.flip(img, axis=axis).copy()
+        res_imgs.append(img)
+    return tuple(res_imgs)
 
 def random_rotate(image, label):
     angle = np.random.randint(-20, 20)
     image = ndimage.rotate(image, angle, order=0, reshape=False)
     label = ndimage.rotate(label, angle, order=0, reshape=False)
     return image, label
+
+def random_rotate_list(images):
+    angle = np.random.randint(-20, 20)
+    res_imgs = []
+    for image in images:
+        image = ndimage.rotate(image, angle, order=0, reshape=False)
+        res_imgs.append(image)
+    return tuple(res_imgs)
 
 
 def color_jitter(image):
@@ -473,8 +529,9 @@ class RandomGeneratorv3(object):
         self.val_list=[-1,0]
         self.image_need_trans = args.image_need_trans
         self.image_need_mask = args.image_need_mask
-        self.image_need_fusion = args.image_need_fusion
+        
         self.error_val = args.image_noise
+        self.image_fusion_mode = args.image_fusion_mode
         
     def gen_mask_param(self):
         puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
@@ -490,11 +547,8 @@ class RandomGeneratorv3(object):
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
-        if self.image_need_fusion:
-            image, label = resize_data(image, label,self.output_size)
-            origin_img, _ = resize_data(sample["origin_img"], sample["origin_img"],self.output_size)
-            image = np.stack([origin_img,image],axis=0)
-        else:
+        
+        if self.image_fusion_mode == 0:
             if self.image_need_trans:
                 if random.random() > 0.5:
                     image, label = random_rot_flip(image, label)
@@ -510,7 +564,7 @@ class RandomGeneratorv3(object):
             
 
             if self.image_need_mask:    
-                if random.random() > 0.5:
+                if random.random() > 0.3:
                     self.gen_mask_param()
                     
                     rand = random.random()
@@ -529,6 +583,52 @@ class RandomGeneratorv3(object):
             else:
                 if len(image.shape) == 2:
                     image = np.expand_dims(image, axis=0)
+        else:
+            image, label, origin_img = image, label, sample["origin_img"]
+            if self.image_need_trans:
+                if random.random() > 0.5:
+                    image, label, origin_img = random_rot_flip_list([image,label,origin_img])
+                    
+                if random.random() > 0.5:
+                    image, label, origin_img = random_rotate_list([image, label, origin_img])
+                    
+                image, label, origin_img = random_scale_2D_list([image, label, origin_img])
+
+                image, label, origin_img = random_crop_2D_list([image, label, origin_img],self.output_size)
+                
+            image, label, origin_img = resize_data_list([image, label, origin_img],self.output_size)
+            
+            if self.image_fusion_mode == 1:
+                image = np.stack([origin_img,image],axis=0)
+            if self.image_fusion_mode == 2:
+                image = np.stack([origin_img,label],axis=0)
+            if self.image_fusion_mode == 3:
+                b_label = image2binary(label,error_val=0.0001, num_classes=self.num_classes)
+                b_label = np_soft_max(b_label)
+                origin_img = np.expand_dims(origin_img,axis=0)
+                image = np.concatenate([origin_img,b_label])
+            if self.image_fusion_mode == 5:
+                b_image = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
+                b_image = np_soft_max(b_image)
+                origin_img = np.expand_dims(origin_img,axis=0)
+                image = np.concatenate([origin_img,b_image])
+            if self.image_fusion_mode == 4:
+                mask_label = label.copy()
+                if random.random() > 0.3:
+                    self.gen_mask_param()
+                    
+                    rand = random.random()
+                    if rand < 0.20:
+                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+                    elif rand < 0.85:
+                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+                    else:
+                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+                mask_label = image2binary(mask_label,error_val=0.0001, num_classes=self.num_classes)
+                mask_label = np_soft_max(mask_label)
+                origin_img = np.expand_dims(origin_img,axis=0)
+                image = np.concatenate([origin_img,mask_label]) 
     
         image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))

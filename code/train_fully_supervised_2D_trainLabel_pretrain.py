@@ -296,11 +296,24 @@ def train(args, snapshot_path):
 
 """
 训练mad模型
-输入情况有4种:
-- 原始的label经过mask,作为模型输入 图像的通道数是4  关键参数--image_source label --image_need_mask True
-- seg的推理结果作为label,不使用mask,作为模型输入 图像的通道数是4  关键参数--image_source pred_vim_224 --image_need_mask False
-- seg的推理结果作为label,经过mask,作为模型输入 图像的通道数是4  关键参数--image_source pred_vim_224 --image_need_mask True
-- 原始的label不经过变换 图像的通道数是1 --image_need_trans True
+输入情况有8种:
+- [v4.0]lable进行二值化，转化成softmasx的结果 dim=4 再进行mask化, 加扰动0.001
+    
+- [v4.1]seg_pred进行二值化，转化成softmasx的结果 dim=4 再进行mask化
+    
+- [v4.2]seg_pred进行二值化，转化成softmasx的结果 dim=4
+    
+- [v4.3]seg_pred直接作为输入， dim=1
+    
+- [v4.4]image + seg_pred(通道) 作为输入，dim=2
+    
+- [v4.5]image+label(通道)作为输入，dim=2
+    
+- [v4.6]image+label进行二值化(通道) 作为输入，dim=5
+    
+- [v4.7]image+label-mask-进行二值化(通道)作为输入，dim=5
+    
+- [v4.8]image + seg_pred进行二值化(通道)  作为输入，dim=5
 """
 if __name__ == "__main__":
     if not args.deterministic:

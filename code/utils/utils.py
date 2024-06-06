@@ -98,6 +98,7 @@ def get_image_fusion_mode(mode):
                 "3": "label进行二值化 + image作为输入,dim=5", 
                 "4": "label进行二值化,mask + image作为输入,dim=5",
                 "5": "pred进行二值化+ image作为输入,dim=5", 
+                "6": "(pred进行二值化和label_mask)/2+ image作为输入,dim=5", 
                 }
     return ref_dict[str(mode)]
 

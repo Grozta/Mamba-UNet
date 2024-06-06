@@ -612,7 +612,7 @@ class RandomGeneratorv3(object):
                 b_image = np_soft_max(b_image)
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,b_image])
-            if self.image_fusion_mode == 4:
+            if self.image_fusion_mode == 4 or self.image_fusion_mode == 6:
                 mask_label = label.copy()
                 if random.random() > 0.3:
                     self.gen_mask_param()
@@ -627,6 +627,10 @@ class RandomGeneratorv3(object):
                         mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
                 mask_label = image2binary(mask_label,error_val=0.0001, num_classes=self.num_classes)
                 mask_label = np_soft_max(mask_label)
+                if self.image_fusion_mode == 6:
+                    b_pred = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
+                    b_pred = np_soft_max(b_pred)
+                    mask_label = (mask_label + b_pred)/2
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,mask_label]) 
     

@@ -101,5 +101,39 @@ def get_image_fusion_mode(mode):
                 }
     return ref_dict[str(mode)]
 
+def get_model_struct_mode(mode):
+    """struct 1
+            label-----------|-----mad_model------------loss
+                           /x/       |
+                            |        | ema_update
+            img------seg_model----ema_model------------loss
+                            |
+                            |------loss
+    """   
+    """struct 1
+            label-----------|-----mad_model------------loss
+                           /x/       |
+                            |        | ema_update
+            img------seg_model----ema_model
+                            |
+                            |------loss
+    """   
+    """struct 3
+            img-------------|
+                            | 
+                            |
+            img------seg_model----ema_model------------loss
+                            |
+                            |------loss
+    """   
+             
+    ref_dict = {
+        
+        "0": "[结构1]seg输出给mad和ema,mad通过EMA更新ema,并且ema通过loss也更新", 
+        "1": "[结构2]0的基础上移除ema的loss", 
+        "2": "[结构3]移除mad,将img再次输入给ema",
+                }
+    return ref_dict[str(mode)]
+
 if __name__ == "__main__":
     looper(5)

@@ -1,14 +1,14 @@
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_label',default=False, 
-                    action="store_true", help="train label mode")
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
                     default='ACDC/Fully_Supervised_TrainLabel', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
+parser.add_argument('--input_channels', type=int,  default=4,
+                    help='Number of input channels about network')
 parser.add_argument('--mad_model', type=str,
                     default='unet', help='mad_model_name and ema_model name')
 parser.add_argument('--seg_model', type=str,
@@ -17,8 +17,10 @@ parser.add_argument('--pretrain_path_seg', type=str,
                     default='../data/pretrain/seg_model_unet.pth', help='pretrain seg_model path')
 parser.add_argument('--pretrain_path_mad', type=str,
                     default='../data/pretrain/mad_model_unet.pth', help='pretrain mad_model path')
-parser.add_argument('--load_ema_pretrain',default=False, 
-                    action="store_true", help="if true,load ema_seg pretrian model")
+parser.add_argument('--train_struct_mode',type=int, default=0,choices=[0,1,2],
+                    help='The structure of training.')
+parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5],
+                    help='Image fusion mode.')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--max_iterations', type=int,
@@ -29,12 +31,10 @@ parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
-parser.add_argument('--patch_size', type=int,  default=256,
+parser.add_argument('--patch_size', type=int,  default=224,
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, 
                     help='random seed')
-parser.add_argument('--labeled_num', type=int, default=140,
-                    help='labeled data')
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--ema_decay', type=float,  default=0.999, 
@@ -58,3 +58,5 @@ parser.add_argument('--eval', action='store_true',
                     help='Perform evaluation only')
 parser.add_argument('--throughput', action='store_true',
                     help='Test throughput only')
+parser.add_argument('--end2Test',default=False, 
+                    action="store_true", help='Test at the end of training')

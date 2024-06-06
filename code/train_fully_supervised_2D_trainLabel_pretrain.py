@@ -337,7 +337,7 @@ if __name__ == "__main__":
     if os.path.exists(snapshot_path + '/code'):
         shutil.rmtree(snapshot_path + '/code')
     shutil.copytree('.', snapshot_path + '/code',
-                    shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
+                    ignore=shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')

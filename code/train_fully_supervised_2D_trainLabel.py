@@ -19,17 +19,18 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from config import get_config
-from dataloaders.dataset import BaseDataSets4pretrain,RandomGeneratorv_4_finetune
+from dataloaders.dataset import BaseDataSets4TrainLabel,RandomGeneratorv_4_finetune
 from networks.net_factory import net_factory
 from utils import losses
-from val_2D import test_single_volume_for_trainLabel
-from utils.utils import label2color, worker_init_fn, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase
+from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase, get_train_test_mode
 from utils.argparse_c import parser
 
 def test_fine_tune(args, snapshot_path):
     writer = args.writer
-    model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes)
-    db_test = BaseDataSets4pretrain(args,mode = "test",
+    seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
+    ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
+    
+    db_test = BaseDataSets4TrainLabel(args,mode = "test",
                                    transform=transforms.Compose([RandomGeneratorv_4_finetune(args)])) 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
     pth_list = get_pth_files(snapshot_path)
@@ -38,39 +39,32 @@ def test_fine_tune(args, snapshot_path):
     for iter_num in iterator:
         pth = pth_list[iter_num]
         model_pretrained_dict = torch.load(os.path.join(snapshot_path,pth))
-        model.load_state_dict(model_pretrained_dict)
-        model.eval()
+        seg_model.load_state_dict(model_pretrained_dict["seg_state_dict"])
+        ema_model.load_state_dict(model_pretrained_dict["ema_state_dict"])
+        seg_model.eval()
+        ema_model.eval()
         metric_list = []
         for i_batch, sampled_batch in enumerate(testloader):
             test_image, test_label = sampled_batch['image'], sampled_batch['label']
             test_image, test_label = test_image.cuda(), test_label.numpy()
-            outputs = model(test_image)
-            pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
-            if args.image_fusion_mode in [3,4,5]:
-                image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
-                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
-            elif args.image_fusion_mode in [1,2]:
-                image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
-                writer.add_image(f'test_{pth}/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
-            elif args.input_channels == 1:
-                image = test_image[0,0, ...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
-            else:
-                image = torch.argmax(test_image[0, ...], dim=0).cpu().numpy()
-                writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
-                
-            prediction = pred[0]
-            writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
+            outputs_seg_soft = torch.softmax(seg_model(test_image),dim=1)
+            outputs_ema_soft = torch.softmax(ema_model(outputs_seg_soft),dim=1)
+            seg_pred = torch.argmax(outputs_seg_soft,dim=1).cpu().numpy()
+            ema_pred = torch.argmax(outputs_ema_soft,dim=1).detach().cpu().numpy()
+            
+            image = test_image[0,0, ...].cpu().numpy()
+            writer.add_image(f'test_{pth}/Image', image, i_batch,dataformats='HW')
+            pred_seg = seg_pred[0]
+            writer.add_image(f'test_{pth}/Pred_seg', label2color(pred_seg), i_batch,dataformats='HWC')
+            pred_ema = ema_pred[0]
+            writer.add_image(f'test_{pth}/Pred_ema', label2color(pred_ema), i_batch,dataformats='HWC')
             labs = test_label[0, ...]
             writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
 
-            first_metric = calculate_metric_percase(prediction == 1, labs == 1)
-            second_metric = calculate_metric_percase(prediction == 2, labs == 2)
-            third_metric = calculate_metric_percase(prediction == 3, labs == 3)
+            first_metric = calculate_metric_percase(pred_ema == 1, labs == 1)
+            second_metric = calculate_metric_percase(pred_ema == 2, labs == 2)
+            third_metric = calculate_metric_percase(pred_ema == 3, labs == 3)
             metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
-            metric_i[metric_i==None] = np.nan
             if not np.all(np.isnan(metric_i.astype(float))):
                 metric_i = np.nanmean(metric_i,axis=0)#1x2
                 metric_list.append(metric_i)
@@ -84,23 +78,23 @@ def train(args, snapshot_path):
     writer = args.writer
     logging.info("Current model struction is : {}".format(get_model_struct_mode(args.train_struct_mode)))
     
-    db_train = BaseDataSets4pretrain(args, mode="train", transform=transforms.Compose([
-        RandomGeneratorv_4_finetune(args.patch_size, num_classes=args.num_classes)
+    db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
+        RandomGeneratorv_4_finetune(args)
     ]))
-    db_val = BaseDataSets4pretrain(args, mode="val", transform=transforms.Compose([
-        RandomGeneratorv_4_finetune(args.patch_size, num_classes=args.num_classes)
+    db_val = BaseDataSets4TrainLabel(args, mode="val", transform=transforms.Compose([
+        RandomGeneratorv_4_finetune(args)
     ]))
     trainloader = DataLoader(db_train, batch_size=args.batch_size, shuffle=True,
-                             num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
+                             num_workers=args.num_workers, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=1,pin_memory=True, shuffle=True,num_workers =1)
     
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
-    ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels, class_num=args.num_classes)
+    ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
     seg_model.load_state_dict(seg_model_pretrained_dict, strict=False)
     mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
     ema_model.load_state_dict(mad_model_pretrained_dict, strict=False)
-    mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels, class_num=args.num_classes)
+    mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     mad_model.load_state_dict(mad_model_pretrained_dict, strict=False)
     
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.base_lr,
@@ -187,76 +181,99 @@ def train(args, snapshot_path):
                 (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
 
             if iter_num % 20 == 0:
-                image = volume_batch[1, 0:1, :, :]
-                writer.add_image('train/Image', image, iter_num)
-                labs = label_batch[1, ...].unsqueeze(0) * 50
-                writer.add_image('train/GroundTruth', labs, iter_num)
+                image = sampled_batch['image'][0, 0, ...]
+                writer.add_image('train/Image', image, iter_num, dataformats='HW')
                 
-                mask_labs = torch.argmax(torch.softmax(
-                    mask_label_batch, dim=1), dim=1, keepdim=True)
-                writer.add_image('train/mask_lable',
-                                 mask_labs[1, ...] * 50, iter_num)
+                labs = sampled_batch['label'][0, ...]
+                writer.add_image('train/GroundTruth', 
+                                 label2color(labs), iter_num,dataformats='HWC')
                 
-                seg_outputs = torch.argmax(torch.softmax(
-                    seg_outputs, dim=1), dim=1, keepdim=True)
+                mask_labs = torch.argmax(sampled_batch['mask_label'], dim=1)[0, ...]
+                writer.add_image('train/mask_lable', 
+                                 label2color(mask_labs), iter_num,dataformats='HWC')
+                
+                seg_outputs = torch.argmax(seg_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/segPrediction',
-                                 seg_outputs[1, ...] * 50, iter_num)
+                                 label2color(seg_outputs), iter_num,dataformats='HWC')
                 
-                ema_outputs = torch.argmax(torch.softmax(
-                    ema_outputs, dim=1), dim=1, keepdim=True)
+                ema_outputs = torch.argmax(ema_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emaPrediction',
-                                 ema_outputs[1, ...] * 50, iter_num)
+                                 label2color(ema_outputs), iter_num,dataformats='HWC')
                 
-                mad_outputs = torch.argmax(torch.softmax(
-                    mad_outputs, dim=1), dim=1, keepdim=True)
+                mad_outputs = torch.argmax(mad_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/madPrediction',
-                                 mad_outputs[1, ...] * 50, iter_num)
+                                 label2color(mad_outputs), iter_num,dataformats='HWC')
+            model_state = {"seg_state_dict":seg_model.state_dict(),
+                           "ema_state_dict":ema_model.state_dict(),
+                           "mad_state_dict":mad_model.state_dict()}    
                 
-                
-            if iter_num > 0 and iter_num % 200 == 0:
+            if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
                 seg_model.eval()
-                mad_model.eval()
                 ema_model.eval()
-                metric_list = 0.0
+                metric_list = []
+                random_number = np.random.randint(0, len(valloader))
                 for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume_for_trainLabel(
-                        sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
-                    metric_list += np.array(metric_i)
-                metric_list = metric_list / len(db_val)
-                for class_i in range(args.num_classes-1):
-                    writer.add_scalar('info/val_{}_dice'.format(class_i+1),
-                                      metric_list[class_i, 0], iter_num)
-                    writer.add_scalar('info/val_{}_hd95'.format(class_i+1),
-                                      metric_list[class_i, 1], iter_num)
+                    val_image, val_label = sampled_batch['image'], sampled_batch['label']
+                    val_image, val_label = val_image.cuda(), val_label.numpy()
+                    outputs_seg_soft = torch.softmax(seg_model(val_image),dim=1)
+                    outputs_ema_soft = torch.softmax(ema_model(outputs_seg_soft),dim=1)
+                    seg_pred = torch.argmax(outputs_seg_soft,dim=1).cpu().numpy()
+                    ema_pred = torch.argmax(outputs_ema_soft,dim=1).detach().cpu().numpy()
+                    if i_batch == random_number:
+                        image = val_image[0,0, ...].cpu().numpy()
+                        writer.add_image('val/Image', image, iter_num,dataformats='HW')
+                        pred_seg = seg_pred[0]
+                        writer.add_image('val/Pred_seg', label2color(pred_seg), iter_num,dataformats='HWC')
+                        pred_ema = ema_pred[0]
+                        writer.add_image('val/Pred_ema', label2color(pred_ema), iter_num,dataformats='HWC')
+                        labs = val_label[0, ...]
+                        writer.add_image('val/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
+                    ema_pred = ema_pred[0,...]
+                    val_label = val_label[0,...]
+                    first_metric = calculate_metric_percase(ema_pred == 1, val_label == 1)
+                    second_metric = calculate_metric_percase(ema_pred == 2, val_label == 2)
+                    third_metric = calculate_metric_percase(ema_pred == 3, val_label == 3)
+                    metric_i = np.array([first_metric,second_metric,third_metric])
+                    metric_list.append(metric_i)
+                metric_list = np.stack(metric_list)
+                metric_list[metric_list==None] = np.nan
+                avg_metric = np.nanmean(metric_list,axis=0)
+                performance = np.mean(avg_metric,axis=0)
+                
+                logging.info(f'iteration: {iter_num} performance_list :\n {avg_metric}')
+                logging.info(f'iteration: {iter_num} mean_performance : {performance}')
+                writer.add_scalars('info/val_dice',{"1":avg_metric[0][0],
+                                                    "2":avg_metric[1][0],
+                                                    "3":avg_metric[2][0],
+                                                    "avg_dice":performance[0]}, iter_num)
+                writer.add_scalars('info/val_hd95',{"1":avg_metric[0][1],
+                                                    "2":avg_metric[1][1],
+                                                    "3":avg_metric[2][1],
+                                                    "avg_hd95":performance[1]}, iter_num)
 
-                performance = np.mean(metric_list, axis=0)[0]
-
-                mean_hd95 = np.mean(metric_list, axis=0)[1]
-                writer.add_scalar('info/val_mean_dice', performance, iter_num)
-                writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
-
-                if performance > best_performance:
-                    best_performance = performance
-                    save_mode_path = os.path.join(snapshot_path,
+                if performance[0] > best_performance:
+                    best_performance = performance[0]
+                    writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
+                    save_best = os.path.join(snapshot_path,
+                                             'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
+                    torch.save(model_state, save_best)
+                    logging.info("save_best_model to {}".format(save_best))
+                    
+                    if iter_num >len(trainloader)*80:
+                        save_mode_path = os.path.join(snapshot_path,
                                                   'iter_{}_dice_{}.pth'.format(
                                                       iter_num, round(best_performance, 4)))
-                    save_best = os.path.join(snapshot_path,
-                                             '{}_best_model.pth'.format(args.mad_model))
-                    check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
-                    torch.save(check_point, save_mode_path)
-                    torch.save(check_point, save_best)
+                        torch.save(model_state, save_mode_path)
+                        logging.info("save_best_iter_model to {}".format(save_mode_path))
 
-                logging.info(
-                    'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
+                
                 seg_model.train()
-                mad_model.train()
                 ema_model.train()
 
-            if iter_num % 2000 == 0:
+            if iter_num % (len(trainloader)*40) == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
-                check_point={"seg_model":seg_model.state_dict(),"ema_model":ema_model.state_dict()}
-                torch.save(check_point, save_mode_path)
+                torch.save(model_state, save_mode_path)
                 logging.info("save model to {}".format(save_mode_path))
 
             if iter_num >= args.max_iterations:
@@ -264,7 +281,7 @@ def train(args, snapshot_path):
         if iter_num >= args.max_iterations:
             iterator.close()
             break
-    writer.close()
+
     return "Training Finished!"
 
 
@@ -287,7 +304,7 @@ if __name__ == "__main__":
     
     snapshot_path = "../model/{}_{}_labeled/{}-{}_{}".format(
         args.exp, args.labeled_num, args.seg_model, args.mad_model, args.tag)
-    if args.tag == "v99" and os.path.exists(snapshot_path):
+    if args.clean_before_run and os.path.exists(snapshot_path):
         shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
@@ -300,7 +317,12 @@ if __name__ == "__main__":
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     args.writer = SummaryWriter(snapshot_path + '/log')
-    train(args, snapshot_path)
-    if args.end2Test:
+    if get_train_test_mode(args.train_test_mode) == "only_Training":
+        train(args, snapshot_path)
+    elif get_train_test_mode(args.train_test_mode) == "Train2Test":
+        train(args, snapshot_path)
+        test_fine_tune(args, snapshot_path)
+    elif get_train_test_mode(args.train_test_mode) == "only_Testing":
+        args.writer = SummaryWriter(snapshot_path + '/testlog')
         test_fine_tune(args, snapshot_path)
     args.writer.close()

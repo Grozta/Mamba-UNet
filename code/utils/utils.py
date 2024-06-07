@@ -74,7 +74,7 @@ def update_ema_variables(model, ema_model, alpha, global_step):
         
 def calculate_metric_percase(pred, gt):
     if np.sum(gt)==0:
-        return None, None
+        return np.nan, np.nan
     if np.sum(pred) == 0:
         return 0.0,99.0
     pred[pred > 0] = 1
@@ -134,6 +134,13 @@ def get_model_struct_mode(mode):
         "0": "[结构1]seg_model输出给mad_model和ema_model,mad通过EMA更新ema_model,并且ema_model通过loss也更新", 
         "1": "[结构2]0的基础上移除ema_model的loss", 
         "2": "[结构3]移除mad_model,将seg_model直接输入给ema_model",
+                }
+    return ref_dict[str(mode)]
+
+def get_train_test_mode(mode):
+    ref_dict = {"0": "only_Training", 
+                "1": "Train2Test", 
+                "2": "only_Testing"
                 }
     return ref_dict[str(mode)]
 

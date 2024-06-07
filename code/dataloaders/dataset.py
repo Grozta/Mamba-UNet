@@ -112,6 +112,37 @@ class BaseDataSets4pretrain(Dataset):
         sample["idx"] = idx
         return sample
 
+class BaseDataSets4TrainLabel(Dataset):
+    def __init__(self,args ,transform=None,mode = "train"):
+        self.sample_list = []
+        self.transform = transform
+        self.mode = mode
+        self.args = args
+
+        with open(self.args.root_path + f"/{self.mode}_slices.list", "r") as f1:
+                self.sample_list = f1.readlines()
+        self.sample_list = [item.replace("\n", "") for item in self.sample_list]
+        
+        random.shuffle(self.sample_list)
+        logging.info(f"total {len(self.sample_list)} samples")
+        logging.info(f"Dataset {mode} pred_image source from {self.args.sample_pred_source}")
+        self.fusion_mode = get_image_fusion_mode(self.args.image_fusion_mode)
+        logging.info(f"Dataset {mode} input image fusion mode: {self.fusion_mode}")
+
+    def __len__(self):
+        return len(self.sample_list)
+    """
+    for label train
+    """
+    def __getitem__(self, idx):
+        case = self.sample_list[idx]
+        case_path = self.args.root_path + "/data/slices/{}.h5".format(case)
+        h5f = h5py.File(case_path, "r")
+        sample = {"image": h5f["image"][:], "label": h5f["label"][:], "pred":h5f[self.args.sample_pred_source][:]}
+        sample = self.transform(sample)    
+        sample["idx"] = idx
+        return sample
+
 class RandomCrop(object):
     """
     Crop randomly the image in a sample
@@ -662,8 +693,6 @@ class RandomGeneratorv_4_finetune(object):
         self.edge_mask_total = (1,4)
         self.val = -1
         self.val_list=[-1,0]
-        self.image_need_trans = args.image_need_trans
-        self.image_need_mask = args.image_need_mask
         
         self.error_val = args.image_noise
         self.image_fusion_mode = args.image_fusion_mode
@@ -683,91 +712,38 @@ class RandomGeneratorv_4_finetune(object):
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
         
-        if self.image_fusion_mode == 0:
-            if self.image_need_trans:
-                if random.random() > 0.5:
-                    image, label = random_rot_flip(image, label)
-                    
-                if random.random() > 0.5:
-                    image, label = random_rotate(image, label)
-                    
-                image, label = random_scale_2D(image,label)
-
-                image, label = random_crop_2D(image,label,self.output_size)
-                
-            image, label = resize_data(image, label,self.output_size)
+        if random.random() > 0.5:
+            image, label = random_rot_flip(image, label)
             
-
-            if self.image_need_mask:    
-                if random.random() > 0.3:
-                    self.gen_mask_param()
-                    
-                    rand = random.random()
-                    if rand < 0.20:
-                        image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-                    elif rand < 0.85:
-                        image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                    else:
-                        image, label = random_mask_edge(image,label,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                        image, label = random_mask_puzzle(image,label,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-
-                image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
-            
-                image = np_soft_max(image)
-                
-            else:
-                if len(image.shape) == 2:
-                    image = np.expand_dims(image, axis=0)
+        if random.random() > 0.5:
+            image, label = random_rotate(image, label)
+        
+        image, label = resize_data(image, label,self.output_size)
+        
+        mask_label = label.copy()
+        
+        self.gen_mask_param()
+        
+        rand = random.random()
+        if rand < 0.20:
+            mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        elif rand < 0.85:
+            mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
         else:
-            image, label, origin_img = image, label, sample["origin_img"]
-            if self.image_need_trans:
-                if random.random() > 0.5:
-                    image, label, origin_img = random_rot_flip_list([image,label,origin_img])
-                    
-                if random.random() > 0.5:
-                    image, label, origin_img = random_rotate_list([image, label, origin_img])
-                    
-                image, label, origin_img = random_scale_2D_list([image, label, origin_img])
+            mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+            mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        
+        image, label, mask_label = random_scale_2D_mask(image,label,mask_label)
 
-                image, label, origin_img = random_crop_2D_list([image, label, origin_img],self.output_size)
-                
-            image, label, origin_img = resize_data_list([image, label, origin_img],self.output_size)
-            
-            if self.image_fusion_mode == 1:
-                image = np.stack([origin_img,image],axis=0)
-            if self.image_fusion_mode == 2:
-                image = np.stack([origin_img,label],axis=0)
-            if self.image_fusion_mode == 3:
-                b_label = image2binary(label,error_val=0.0001, num_classes=self.num_classes)
-                b_label = np_soft_max(b_label)
-                origin_img = np.expand_dims(origin_img,axis=0)
-                image = np.concatenate([origin_img,b_label])
-            if self.image_fusion_mode == 5:
-                b_image = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
-                b_image = np_soft_max(b_image)
-                origin_img = np.expand_dims(origin_img,axis=0)
-                image = np.concatenate([origin_img,b_image])
-            if self.image_fusion_mode == 4:
-                mask_label = label.copy()
-                if random.random() > 0.3:
-                    self.gen_mask_param()
-                    
-                    rand = random.random()
-                    if rand < 0.20:
-                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-                    elif rand < 0.85:
-                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                    else:
-                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-                mask_label = image2binary(mask_label,error_val=0.0001, num_classes=self.num_classes)
-                mask_label = np_soft_max(mask_label)
-                origin_img = np.expand_dims(origin_img,axis=0)
-                image = np.concatenate([origin_img,mask_label]) 
-    
-        image = torch.from_numpy(image.astype(np.float32))
+        image, label, mask_label = random_crop_2D_mask(image,label,mask_label,self.output_size)
+
+        mask_label = image2binary(mask_label,num_classes=self.num_classes)
+        mask_label = np_soft_max(mask_label)
+        
+        mask_label = torch.from_numpy(mask_label.astype(np.float32))
+        image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
         label = torch.from_numpy(label.astype(np.long))
-        sample = {"image": image, "label": label}
+        sample = {"image": image, "label": label, 'mask_label': mask_label}
         return sample
     
 class RandomGeneratorv4(object):

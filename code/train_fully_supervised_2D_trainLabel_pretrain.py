@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
-                    default='ACDC/TrainLabelPretrain', help='experiment_name')
+                    default='ACDC/MAD_Pretrain', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
 parser.add_argument('--model', type=str,
@@ -92,15 +92,15 @@ def test_pretrain(args, snapshot_path):
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             if args.image_fusion_mode in [7]:
                 image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin,axis=0)), iter_num,dataformats='HWC')
+                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin,axis=0)), i_batch,dataformats='HWC')
             elif args.image_fusion_mode in [3,4,5,6]:
                 image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
-                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
+                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], i_batch, dataformats='HW')
+                writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), i_batch,dataformats='HWC')
             elif args.image_fusion_mode in [1,2]:
                 image_origin  = test_image[0,...].cpu().numpy()
-                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], iter_num, dataformats='HW')
-                writer.add_image(f'test_{pth}/Image_pred', label2color(image_origin[1]), iter_num,dataformats='HWC')
+                writer.add_image(f'test_{pth}/Image_origin', image_origin[0], i_batch, dataformats='HW')
+                writer.add_image(f'test_{pth}/Image_pred', label2color(image_origin[1]), i_batch,dataformats='HWC')
             elif args.input_channels == 1:
                 image = test_image[0,0, ...].cpu().numpy()
                 writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')

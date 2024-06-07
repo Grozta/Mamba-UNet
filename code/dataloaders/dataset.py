@@ -612,7 +612,7 @@ class RandomGeneratorv3(object):
                 b_image = np_soft_max(b_image)
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,b_image])
-            if self.image_fusion_mode == 4 or self.image_fusion_mode == 6:
+            if self.image_fusion_mode == 4 or self.image_fusion_mode == 6 or self.image_fusion_mode == 7:
                 mask_label = label.copy()
                 if random.random() > 0.3:
                     self.gen_mask_param()
@@ -630,9 +630,12 @@ class RandomGeneratorv3(object):
                 if self.image_fusion_mode == 6:
                     b_pred = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
                     b_pred = np_soft_max(b_pred)
-                    mask_label = (mask_label + b_pred)/2
-                origin_img = np.expand_dims(origin_img,axis=0)
-                image = np.concatenate([origin_img,mask_label]) 
+                    mask_label = np_soft_max((mask_label + b_pred)/2)
+                if self.image_fusion_mode == 4 or self.image_fusion_mode == 6:   
+                    origin_img = np.expand_dims(origin_img,axis=0)
+                    image = np.concatenate([origin_img,mask_label]) 
+                if self.image_fusion_mode == 7:
+                    image = mask_label
     
         image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))

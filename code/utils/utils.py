@@ -99,40 +99,41 @@ def get_image_fusion_mode(mode):
                 "4": "label进行二值化,mask + image作为输入,dim=5",
                 "5": "pred进行二值化+ image作为输入,dim=5", 
                 "6": "(pred进行二值化和label_mask)/2+ image作为输入,dim=5", 
+                "7": "(lable-mask+ seg_pred进行二值化))/2 作为输入,dim=4",
                 }
     return ref_dict[str(mode)]
 
 def get_model_struct_mode(mode):
     """struct 1
-            label-----------|-----mad_model------------loss
+            label-----------·-----mad_model------------loss
                            /x/       |
                             |        | ema_update
             img------seg_model----ema_model------------loss
                             |
-                            |------loss
+                            ·------loss
     """   
     """struct 1
-            label-----------|-----mad_model------------loss
+            label-----------·-----mad_model------------loss
                            /x/       |
                             |        | ema_update
             img------seg_model----ema_model
                             |
-                            |------loss
+                            ·------loss
     """   
     """struct 3
-            img-------------|
-                            | 
+            img_s---------------·
+                                | 
+                                |
+            img------seg_model--·-ema_model------------loss
                             |
-            img------seg_model----ema_model------------loss
-                            |
-                            |------loss
+                            ·------loss
     """   
              
     ref_dict = {
         
-        "0": "[结构1]seg输出给mad和ema,mad通过EMA更新ema,并且ema通过loss也更新", 
-        "1": "[结构2]0的基础上移除ema的loss", 
-        "2": "[结构3]移除mad,将img再次输入给ema",
+        "0": "[结构1]seg_model输出给mad_model和ema_model,mad通过EMA更新ema_model,并且ema_model通过loss也更新", 
+        "1": "[结构2]0的基础上移除ema_model的loss", 
+        "2": "[结构3]移除mad_model,将seg_model直接输入给ema_model",
                 }
     return ref_dict[str(mode)]
 

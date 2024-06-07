@@ -378,9 +378,9 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--model","unet",
-                "--input_channels","5",
+                "--input_channels","4",
                 "--image_source","pred_vim_224",
-                "--image_fusion_mode","5",
+                "--image_fusion_mode","7",
                 "--image_need_trans",
                 "--end2Test",
                 "--max_iterations","660"

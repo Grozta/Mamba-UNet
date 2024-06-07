@@ -25,8 +25,6 @@ parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_2
                     default='pred_vim_224', help='The field name of the image source from dataset sample') #labeled_num
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
-parser.add_argument('--labeled_num', type=int,  default=140,
-                    help='number of labeled')
 parser.add_argument('--image_noise',type=float,  
                     default=0.001, help='Noise added when converting to binary image')
 parser.add_argument('--max_iterations', type=int,

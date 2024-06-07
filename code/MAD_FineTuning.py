@@ -302,8 +302,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     
-    snapshot_path = "../model/{}/{}-{}_{}".format(
-        args.exp, args.mad_model, args.tag)
+    snapshot_path = "../model/{}/{}-{}_{}".format(args.exp, args.seg_model,args.mad_model, args.tag)
     if args.clean_before_run and os.path.exists(snapshot_path):
         shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):

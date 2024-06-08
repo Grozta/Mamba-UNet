@@ -676,7 +676,8 @@ class RandomGeneratorv3(object):
 class RandomGeneratorv_4_finetune(object):
     """for label train 
     """
-    def __init__(self, args):
+    def __init__(self, args,mode):
+        self.mode = mode
         self.output_size = args.patch_size
         self.num_classes = args.num_classes
         
@@ -711,6 +712,12 @@ class RandomGeneratorv_4_finetune(object):
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
+        if self.mode != "train":
+            image, _ = resize_data(image, image,self.output_size)
+            image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+            label = torch.from_numpy(label.astype(np.long))
+            sample = {"image": image, "label": label}
+            return sample
         
         if random.random() > 0.5:
             image, label = random_rot_flip(image, label)

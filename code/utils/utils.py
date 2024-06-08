@@ -59,8 +59,8 @@ def get_pth_files(directory ,endswith='.pth'):
             pth_files.append(os.path.join(file))
     return pth_files
 
-def worker_init_fn(args,worker_id):
-        random.seed(args.seed + worker_id)
+def worker_init_fn(worker_id):
+        random.seed(1337 + worker_id)
         
 def get_current_consistency_weight(args,consistency,epoch):  
     # Consistency ramp-up from https://arxiv.org/abs/1610.02242

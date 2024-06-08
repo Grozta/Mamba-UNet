@@ -323,16 +323,16 @@
             }
         },
         {
-            "name": "ACDC_train_label",
+            "name": "ACDC_MAD_FineTuning",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/code/train_fully_supervised_2D_trainLabel.py",
+            "program": "${workspaceFolder}/code/MAD_FineTuning.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
-                "--exp", "ACDC/trainLabel",
+                "--exp", "ACDC/MAD_FineTuning",
                 "--batch_size","12",
                 "--patch_size","224",
                 "--input_channels_mad","4",
@@ -366,10 +366,10 @@
                 "CUDA_VISIBLE_DEVICES": "0",
             }
         },{
-            "name": "ACDC_mad_pred_train",
+            "name": "ACDC_MAD_Pred_train",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/code/train_fully_supervised_2D_trainLabel_pretrain.py",
+            "program": "${workspaceFolder}/code/MAD_Pretrain.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
@@ -382,7 +382,7 @@
                 "--image_need_trans",
                 "--end2Test",
                 "--max_iterations","660"
-            ], // python train_fully_supervised_2D_trainLabel_pretrain.py --root_path /media/grozta/SOYO/DATASET/ACDC --tag v2.0 --model unet --input_channels 4 --image_source label --image_need_trans --image_need_mask --image_noise 0.001 --end2Test
+            ], // python MAD_Pretrain.py --root_path /media/grozta/SOYO/DATASET/ACDC --tag v2.0 --model unet --input_channels 4 --image_source label --image_need_trans --image_need_mask --image_noise 0.001 --end2Test
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }

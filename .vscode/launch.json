@@ -341,7 +341,7 @@
                 "--pretrain_path_mad","../data/pretrain/mad_model_unet.pth",
                 "--train_struct_mode","0",
                 "--image_fusion_mode","0",
-                "--max_iterations","660",
+                "--test_iterations","660",
                 "--train_test_mode","1",
                 "--clean_before_run"
             ], 

@@ -19,19 +19,19 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from config import get_config
-from dataloaders.dataset import BaseDataSets4TrainLabel,RandomGeneratorv_4_finetune, resize_data_list
+from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
 from utils import losses
 from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase, get_train_test_mode,worker_init_fn
 from utils.argparse_c import parser
+from val_2D import test_single_volume_for_trainLabel
 
 def test_fine_tune(args, snapshot_path):
     writer = args.writer
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
     ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     
-    db_test = BaseDataSets4TrainLabel(args,mode = "test",
-                                   transform=transforms.Compose([RandomGeneratorv_4_finetune(args,mode = "test")])) 
+    db_test = BaseDataSets(base_dir=args.root_path, split="test") 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
     pth_list = get_pth_files(snapshot_path)
     iterator = tqdm(range(len(pth_list)), ncols=70)
@@ -43,35 +43,24 @@ def test_fine_tune(args, snapshot_path):
         ema_model.load_state_dict(model_pretrained_dict["ema_state_dict"])
         seg_model.eval()
         ema_model.eval()
-        metric_list = []
+        
+        metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
-            test_image, test_label = sampled_batch['image'], sampled_batch['label'][0]
-            test_image, test_label = test_image.cuda(), test_label.numpy()
-            outputs_seg_soft = torch.softmax(seg_model(test_image),dim=1)
-            outputs_ema_soft = torch.softmax(ema_model(outputs_seg_soft),dim=1)
-            
-            image = test_image[0,0, ...].cpu().numpy()
-            seg_pred = torch.argmax(outputs_seg_soft,dim=1).cpu().numpy()[0]
-            ema_pred = torch.argmax(outputs_ema_soft,dim=1).detach().cpu().numpy()[0]
-            
-            x, y = test_label.shape[-2], test_label.shape[-1]
-            image, seg_pred, ema_pred = resize_data_list([image,seg_pred,ema_pred],(x,y))
-            
-            writer.add_image(f'test_{pth}/Image', image, i_batch,dataformats='HW')
-            writer.add_image(f'test_{pth}/Pred_seg', label2color(seg_pred), i_batch,dataformats='HWC')
-            writer.add_image(f'test_{pth}/Pred_ema', label2color(ema_pred), i_batch,dataformats='HWC')
-            writer.add_image(f'test_{pth}/GroundTruth',label2color(test_label), i_batch,dataformats='HWC')
+            metric_i = test_single_volume_for_trainLabel(
+                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
+            metric_list += np.array(metric_i)
+        metric_list = metric_list / len(db_test)
 
-            first_metric = calculate_metric_percase(ema_pred == 1, test_label == 1)
-            second_metric = calculate_metric_percase(ema_pred == 2, test_label == 2)
-            third_metric = calculate_metric_percase(ema_pred == 3, test_label == 3)
-            metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
-            metric_i = np.nanmean(metric_i,axis=0)#1x2
-            metric_list.append(metric_i)
-            
-        metric_list = np.stack(metric_list)
-        performance = np.nanmean(metric_list,axis=0)
-        logging.info(f'{pth}_metric :{performance}' )
+        performance = np.mean(metric_list, axis=0) #1x2
+        writer.add_scalars('info/test_dice',{"1":metric_list[0][0],
+                                            "2":metric_list[1][0],
+                                            "3":metric_list[2][0],
+                                            "avg_dice":performance[0]}, iter_num)
+        writer.add_scalars('info/test_hd95',{"1":metric_list[0][1],
+                                            "2":metric_list[1][1],
+                                            "3":metric_list[2][1],
+                                            "avg_hd95":performance[1]}, iter_num)
+        logging.info(f'{pth}_test_metric :{performance}' )
         writer.add_text(f'test/performance',f"{pth}:"+str(performance),iter_num)
 
 def train(args, snapshot_path):
@@ -81,9 +70,7 @@ def train(args, snapshot_path):
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
         RandomGeneratorv_4_finetune(args,mode="train")
     ]))
-    db_val = BaseDataSets4TrainLabel(args, mode="val", transform=transforms.Compose([
-        RandomGeneratorv_4_finetune(args,mode="val")
-    ]))
+    db_val = BaseDataSets(base_dir=args.root_path, split="val")
     trainloader = DataLoader(db_train, batch_size=args.batch_size, shuffle=True,
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
     valloader = DataLoader(db_val, batch_size=1,pin_memory=True, shuffle=True,num_workers =1)
@@ -147,12 +134,7 @@ def train(args, snapshot_path):
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
-            if args.train_struct_mode == 0:
-                loss = seg_loss + mad_loss + ema_loss
-            elif args.train_struct_mode == 1:
-                loss = seg_loss + mad_loss
-            elif args.train_struct_mode == 2:
-                loss = seg_loss + ema_loss
+            loss = seg_loss + mad_loss + ema_loss
             
             optimizer_seg.zero_grad()
             optimizer_mad.zero_grad()
@@ -210,47 +192,24 @@ def train(args, snapshot_path):
             if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
                 seg_model.eval()
                 ema_model.eval()
-                metric_list = []
-                random_number = np.random.randint(0, len(valloader))
+                metric_list = 0.0 # 3x2
                 for i_batch, sampled_batch in enumerate(valloader):
-                    val_image, val_label = sampled_batch['image'], sampled_batch['label']
-                    val_image, val_label = val_image.cuda(), val_label.numpy()[0]
-                    outputs_seg_soft = torch.softmax(seg_model(val_image),dim=1)
-                    outputs_ema_soft = torch.softmax(ema_model(outputs_seg_soft),dim=1)
-                    
-                    image = val_image[0,0, ...].cpu().numpy()
-                    seg_pred = torch.argmax(outputs_seg_soft,dim=1).cpu().numpy()[0]
-                    ema_pred = torch.argmax(outputs_ema_soft,dim=1).detach().cpu().numpy()[0]
-                    
-                    x, y = val_label.shape[-2], val_label.shape[-1]
-                    image, seg_pred, ema_pred = resize_data_list([image,seg_pred,ema_pred],(x,y))
+                    metric_i = test_single_volume_for_trainLabel(
+                        sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
+                    metric_list += np.array(metric_i)
+                metric_list = metric_list / len(db_val)
 
-                    if i_batch == random_number:
-                        writer.add_image('val/Image', image, iter_num,dataformats='HW')
-                        writer.add_image('val/Pred_seg', label2color(seg_pred), iter_num,dataformats='HWC')
-                        writer.add_image('val/Pred_ema', label2color(ema_pred), iter_num,dataformats='HWC')
-                        writer.add_image('val/GroundTruth',label2color(val_label), iter_num,dataformats='HWC')
-
-                    first_metric = calculate_metric_percase(ema_pred == 1, val_label == 1)
-                    second_metric = calculate_metric_percase(ema_pred == 2, val_label == 2)
-                    third_metric = calculate_metric_percase(ema_pred == 3, val_label == 3)
-                    metric_i = np.array([first_metric,second_metric,third_metric])
-                    metric_list.append(metric_i)
-                metric_list = np.stack(metric_list)
-                avg_metric = np.nanmean(metric_list,axis=0)
-                performance = np.nanmean(avg_metric,axis=0)
-                
-                logging.info(f'iteration: {iter_num} performance_list :\n {avg_metric}')
-                logging.info(f'iteration: {iter_num} mean_performance : {performance}')
-                writer.add_scalars('info/val_dice',{"1":avg_metric[0][0],
-                                                    "2":avg_metric[1][0],
-                                                    "3":avg_metric[2][0],
+                performance = np.mean(metric_list, axis=0)
+                logging.info(f'[{iter_num}]_val_metric :{performance}' )
+                writer.add_scalars('info/val_dice',{"1":metric_list[0][0],
+                                                    "2":metric_list[1][0],
+                                                    "3":metric_list[2][0],
                                                     "avg_dice":performance[0]}, iter_num)
-                writer.add_scalars('info/val_hd95',{"1":avg_metric[0][1],
-                                                    "2":avg_metric[1][1],
-                                                    "3":avg_metric[2][1],
+                writer.add_scalars('info/val_hd95',{"1":metric_list[0][1],
+                                                    "2":metric_list[1][1],
+                                                    "3":metric_list[2][1],
                                                     "avg_hd95":performance[1]}, iter_num)
-
+                
                 if performance[0] > best_performance:
                     best_performance = performance[0]
                     writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
@@ -275,6 +234,10 @@ def train(args, snapshot_path):
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model_state, save_mode_path)
                 logging.info("save model to {}".format(save_mode_path))
+            
+            if args.tag == 'v99' and iter_num >=args.test_iterations:
+                iterator.close()
+                return "Testing Finished!"
 
             if iter_num >= args.max_iterations:
                 break
@@ -303,6 +266,8 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(args.seed)
     
     snapshot_path = "../model/{}/{}-{}_{}".format(args.exp, args.seg_model,args.mad_model, args.tag)
+    if get_train_test_mode(args.train_test_mode) == "only_Testing":
+        args.clean_before_run = False
     if args.clean_before_run and os.path.exists(snapshot_path):
         shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):

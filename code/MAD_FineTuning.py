@@ -200,7 +200,8 @@ def train(args, snapshot_path):
                 metric_list = metric_list / len(db_val)
 
                 performance = np.mean(metric_list, axis=0)
-                logging.info(f'[{iter_num}]_val_metric :{performance}' )
+                logging.info(f'iteration: {iter_num} performance_list :\n {metric_list}')
+                logging.info(f'iteration: {iter_num} performance_mean :\n {performance}')
                 writer.add_scalars('info/val_dice',{"1":metric_list[0][0],
                                                     "2":metric_list[1][0],
                                                     "3":metric_list[2][0],

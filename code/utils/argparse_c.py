@@ -29,6 +29,8 @@ parser.add_argument('--image_noise',type=float,
                     default=0.001, help='Noise added when converting to binary image')
 parser.add_argument('--max_iterations', type=int,
                     default=30000, help='maximum epoch number to train')
+parser.add_argument('--test_iterations', type=int,
+                    default=660, help='maximum epoch number to test')
 parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,

@@ -144,5 +144,23 @@ def get_train_test_mode(mode):
                 }
     return ref_dict[str(mode)]
 
+def improvement_log(struct_mode,log_mode):
+    ref_struct1_dict = {
+        "0": "原始的设计",
+        "1": "通道上concat image",
+        "2": "only_Testing"}
+    ref_struct2_dict = {
+        "0": "原始的设计",
+        "1": "通道上concat image",
+        "2": "only_Testing"}
+    ref_struct3_dict = {
+        "0": "only_Training",
+        "1": "Train2Test",
+        "2": "only_Testing"}
+    ref_dict = {get_model_struct_mode(0): ref_struct1_dict, 
+                get_model_struct_mode(1): ref_struct2_dict, 
+                get_model_struct_mode(2): ref_struct3_dict}
+    return ref_dict[str(struct_mode)][str(log_mode)]
+
 if __name__ == "__main__":
     looper(5)

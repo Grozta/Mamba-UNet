@@ -126,18 +126,16 @@ class BaseDataSets4TrainLabel(Dataset):
         with open(self.args.root_path + f"/{self.mode}_slices.list", "r") as f1:
                 self.sample_list = f1.readlines()
         self.sample_list = [item.replace("\n", "") for item in self.sample_list]
-        
+        self.fusion_mode = get_image_fusion_mode(self.args.image_fusion_mode)
         random.shuffle(self.sample_list)
+        
         logging.info(f"total {len(self.sample_list)} samples")
         logging.info(f"Dataset {mode} pred_image source from {self.args.sample_pred_source}")
-        self.fusion_mode = get_image_fusion_mode(self.args.image_fusion_mode)
         logging.info(f"Dataset {mode} input image fusion mode: {self.fusion_mode}")
 
     def __len__(self):
         return len(self.sample_list)
-    """
-    for label train
-    """
+
     def __getitem__(self, idx):
         case = self.sample_list[idx]
         case_path = self.args.root_path + "/data/slices/{}.h5".format(case)

@@ -22,7 +22,7 @@ from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
 from utils import losses
-from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase, get_train_test_mode,worker_init_fn
+from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase, get_train_test_mode,worker_init_fn,improvement_log
 from utils.argparse_c import parser
 from val_2D import test_single_volume_for_trainLabel
 
@@ -47,7 +47,7 @@ def test_fine_tune(args, snapshot_path):
         metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
             metric_i = test_single_volume_for_trainLabel(
-                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
+                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,update_mode=args.update_log_mode)
             metric_list += np.array(metric_i)
         metric_list = metric_list / len(db_test)
 
@@ -65,8 +65,8 @@ def test_fine_tune(args, snapshot_path):
 
 def train(args, snapshot_path):
     writer = args.writer
-    logging.info("Current model struction is : {}".format(get_model_struct_mode(args.train_struct_mode)))
-    
+    logging.info("Current model struction is : {},".format(get_model_struct_mode(args.train_struct_mode)))
+    logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
         RandomGeneratorv_4_finetune(args,mode="train")
     ]))
@@ -78,11 +78,11 @@ def train(args, snapshot_path):
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
     ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
-    seg_model.load_state_dict(seg_model_pretrained_dict, strict=False)
+    seg_model.load_state_dict(seg_model_pretrained_dict)
     mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
-    ema_model.load_state_dict(mad_model_pretrained_dict, strict=False)
+    ema_model.load_state_dict(mad_model_pretrained_dict)
     mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
-    mad_model.load_state_dict(mad_model_pretrained_dict, strict=False)
+    mad_model.load_state_dict(mad_model_pretrained_dict)
     
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.base_lr,
                           momentum=0.9, weight_decay=0.0001)
@@ -115,10 +115,14 @@ def train(args, snapshot_path):
             mask_input = seg_outputs_soft.detach()
             blend_outputs = (mask_input+mask_label_batch)/2
             blend_input = torch.softmax(blend_outputs, dim=1)
+            if args.update_log_mode == 1:
+                blend_input = torch.concat([volume_batch,blend_input],dim=1)
             mad_outputs = mad_model(blend_input)
             mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            ema_outputs = ema_model(seg_outputs_soft)
+            if args.update_log_mode == 1:
+                seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
+            ema_outputs = ema_model(seg_outputs_soft_blend)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
@@ -195,7 +199,9 @@ def train(args, snapshot_path):
                 metric_list = 0.0 # 3x2
                 for i_batch, sampled_batch in enumerate(valloader):
                     metric_i = test_single_volume_for_trainLabel(
-                        sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
+                        sampled_batch["image"], sampled_batch["label"], seg_model, 
+                        ema_model,classes=args.num_classes, patch_size=args.patch_size,
+                        update_mode=args.update_log_mode)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
 

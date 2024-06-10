@@ -154,8 +154,8 @@ def improvement_log(struct_mode,log_mode):
         "1": "通道上concat image",
         "2": "only_Testing"}
     ref_struct3_dict = {
-        "0": "only_Training",
-        "1": "Train2Test",
+        "0": "给原始的设计上去掉mad之后，ema加载的是v4.2的预训练",
+        "1": "",
         "2": "only_Testing"}
     ref_dict = {get_model_struct_mode(0): ref_struct1_dict, 
                 get_model_struct_mode(1): ref_struct2_dict, 

@@ -81,18 +81,13 @@ def train(args, snapshot_path):
     seg_model.load_state_dict(seg_model_pretrained_dict)
     mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
     ema_model.load_state_dict(mad_model_pretrained_dict)
-    mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
-    mad_model.load_state_dict(mad_model_pretrained_dict)
     
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.base_lr,
                           momentum=0.9, weight_decay=0.0001)
     optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.base_lr,
                           momentum=0.9, weight_decay=0.0001)
-    optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.base_lr,
-                          momentum=0.9, weight_decay=0.0001)
     seg_model.train()
     ema_model.train()
-    mad_model.train()
         
     ce_loss = CrossEntropyLoss()
     dice_loss = losses.DiceLoss(args.num_classes)
@@ -112,17 +107,11 @@ def train(args, snapshot_path):
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            mask_input = seg_outputs_soft.detach()
-            blend_outputs = (mask_input+mask_label_batch)/2
-            blend_input = torch.softmax(blend_outputs, dim=1)
-            if args.update_log_mode == 1:
-                blend_input = torch.concat([volume_batch,blend_input],dim=1)
-            mad_outputs = mad_model(blend_input)
-            mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
-            
             if args.update_log_mode == 1:
                 seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
-            ema_outputs = ema_model(seg_outputs_soft_blend)
+                ema_outputs = ema_model(seg_outputs_soft_blend)
+            else:
+                ema_outputs = ema_model(seg_outputs_soft)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
@@ -130,41 +119,32 @@ def train(args, snapshot_path):
             seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
             seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
             
-            mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
-            mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
-            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
-            
             ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
-            loss = seg_loss + mad_loss + ema_loss
+            loss = seg_loss + ema_loss
             
             optimizer_seg.zero_grad()
-            optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
             loss.backward()
             optimizer_seg.step()
-            optimizer_mad.step()
             optimizer_ema.step()
 
             lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
-            for param_group_seg,param_group_ema,param_group_mad in zip(optimizer_seg.param_groups,optimizer_ema.param_groups,optimizer_mad.param_groups):
+            for param_group_seg,param_group_ema in zip(optimizer_seg.param_groups,optimizer_ema.param_groups):
                 param_group_seg['lr'] = lr_
                 param_group_ema['lr'] = lr_
-                param_group_mad['lr'] = lr_
-                
-            update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
+
             iter_num = iter_num + 1
             writer.add_scalar('info/lr', lr_, iter_num)
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
-            writer.add_scalar('info/mad_loss', mad_loss, iter_num)
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
             logging.info(
-                'iteration %d : loss : %f, seg_loss: %f, mad_loss: %f, ema_loss: %f' %
-                (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
+                'iteration %d : loss : %f, seg_loss: %f,  ema_loss: %f' %
+                (iter_num, loss.item(), seg_loss.item(), ema_loss.item()))
 
             if iter_num % 20 == 0:
                 image = sampled_batch['image'][0, 0, ...]
@@ -174,10 +154,6 @@ def train(args, snapshot_path):
                 writer.add_image('train/GroundTruth', 
                                  label2color(labs), iter_num,dataformats='HWC')
                 
-                mask_labs = torch.argmax(sampled_batch['mask_label'], dim=1)[0, ...]
-                writer.add_image('train/mask_lable', 
-                                 label2color(mask_labs), iter_num,dataformats='HWC')
-                
                 seg_outputs = torch.argmax(seg_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/segPrediction',
                                  label2color(seg_outputs), iter_num,dataformats='HWC')
@@ -185,13 +161,9 @@ def train(args, snapshot_path):
                 ema_outputs = torch.argmax(ema_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emaPrediction',
                                  label2color(ema_outputs), iter_num,dataformats='HWC')
-                
-                mad_outputs = torch.argmax(mad_outputs_soft, dim=1).cpu().numpy()[0, ...]
-                writer.add_image('train/madPrediction',
-                                 label2color(mad_outputs), iter_num,dataformats='HWC')
+
             model_state = {"seg_state_dict":seg_model.state_dict(),
-                           "ema_state_dict":ema_model.state_dict(),
-                           "mad_state_dict":mad_model.state_dict()}    
+                           "ema_state_dict":ema_model.state_dict()}    
                 
             if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
                 seg_model.eval()

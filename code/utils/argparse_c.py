@@ -19,6 +19,8 @@ parser.add_argument('--pretrain_path_mad', type=str,
                     default='../data/pretrain/mad_model_unet.pth', help='pretrain mad_model path')
 parser.add_argument('--train_struct_mode',type=int, default=0,choices=[0,1,2],
                     help='The structure of training.')
+parser.add_argument('--update_log_mode',type=int, default=0,
+                    help='The structure of Improvement log')
 parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5],
                     help='Image fusion mode.')
 parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_224"],

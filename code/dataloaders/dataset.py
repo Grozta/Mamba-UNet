@@ -114,6 +114,7 @@ class BaseDataSets4pretrain(Dataset):
         sample = {"image": image, "label": label, "origin_img":h5f["image"][:]}
         sample = self.transform(sample)    
         sample["idx"] = idx
+        sample["case"] = case
         return sample
 
 class BaseDataSets4TrainLabel(Dataset):
@@ -565,6 +566,7 @@ class RandomGeneratorv3(object):
         
         self.error_val = args.image_noise
         self.image_fusion_mode = args.image_fusion_mode
+        self.input_channels = args.input_channels
         
     def gen_mask_param(self):
         puzzle_mask_mask_size = random.choice(self.puzzle_mask_mask_size_list)
@@ -614,6 +616,10 @@ class RandomGeneratorv3(object):
                 image = np_soft_max(image)
                 
             else:
+                if self.input_channels == 4:
+                    image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
+                
+                    image = np_soft_max(image)
                 if len(image.shape) == 2:
                     image = np.expand_dims(image, axis=0)
         else:

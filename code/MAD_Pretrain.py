@@ -22,9 +22,11 @@ from tqdm import tqdm
 from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4pretrain, RandomGeneratorv3
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
-from utils.utils import calculate_metric_percase, label2color, get_pth_files
+from utils.utils import calculate_metric_percase, label2color, get_pth_files,merge_volume_in_dict,get_train_test_mode,extract_iter_number
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--snap_path', type=str,
+                    default='xxx', help='path of Experiment')
 parser.add_argument('--root_path', type=str,
                     default='../data/ACDC', help='Name of Experiment')
 parser.add_argument('--exp', type=str,
@@ -66,8 +68,10 @@ parser.add_argument('--image_need_mask',default=False,
                     action="store_true", help='input image need mask operation')
 parser.add_argument('--image_noise',type=float,  
                     default=0.001, help='Noise added when converting to binary image')
-parser.add_argument('--end2Test',default=False, 
-                    action="store_true", help='Test at the end of training')
+parser.add_argument('--train_test_mode',type=int, default=1,choices=[0,1,2],
+                    help='The mode of train or test.')
+parser.add_argument('--clean_before_run',default=False, 
+                    action="store_true", help='Clean target folder before running')
 args = parser.parse_args()
 
 def test_pretrain(args, snapshot_path):
@@ -77,6 +81,7 @@ def test_pretrain(args, snapshot_path):
                                    transform=transforms.Compose([RandomGeneratorv3(args)])) 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
     pth_list = get_pth_files(snapshot_path)
+    pth_list = sorted(pth_list, key=extract_iter_number)
     iterator = tqdm(range(len(pth_list)), ncols=70)
     metric_list = []
     for iter_num in iterator:
@@ -85,9 +90,10 @@ def test_pretrain(args, snapshot_path):
         model.load_state_dict(model_pretrained_dict)
         model.eval()
         metric_list = []
+        res_dict = {}
         for i_batch, sampled_batch in enumerate(testloader):
-            test_image, test_label = sampled_batch['image'], sampled_batch['label']
-            test_image, test_label = test_image.cuda(), test_label.numpy()
+            test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
+            test_image, test_label,case_name = test_image.cuda(), test_label.numpy(),case_name[0]
             outputs = model(test_image)
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             if args.image_fusion_mode in [7]:
@@ -112,18 +118,23 @@ def test_pretrain(args, snapshot_path):
             writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
             labs = test_label[0, ...]
             writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
-
+            case_res = np.stack([prediction,labs])
+            volume_name,index = tuple(case_name.split('_slice_'))
+            if volume_name in res_dict.keys():
+                res_dict[volume_name][index] = case_res
+            else:
+                res_dict[volume_name]= {index:case_res}
+            
+        volume_pred_list, volume_label_list = merge_volume_in_dict(res_dict)
+        for prediction,labs in zip(volume_pred_list,volume_label_list):
             first_metric = calculate_metric_percase(prediction == 1, labs == 1)
             second_metric = calculate_metric_percase(prediction == 2, labs == 2)
             third_metric = calculate_metric_percase(prediction == 3, labs == 3)
             metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
-            metric_i[metric_i==None] = np.nan
-            if not np.all(np.isnan(metric_i.astype(float))):
-                metric_i = np.nanmean(metric_i,axis=0)#1x2
-                metric_list.append(metric_i)
-            
+            metric_list.append(metric_i) 
         metric_list = np.stack(metric_list)
-        performance = np.nanmean(metric_list,axis=0)
+        avg_metric = np.nanmean(metric_list,axis=0)
+        performance = np.nanmean(avg_metric,axis=0)
         logging.info(f'{pth}_metric :{performance}' )
         writer.add_text(f'test/performance',f"{pth}:"+str(performance),iter_num)
 
@@ -220,8 +231,9 @@ def train(args, snapshot_path):
                 metric_list = []
                 display_image = []
                 random_number = np.random.randint(0, len(valloader))
+                res_dict = {}
                 for i_batch, sampled_batch in enumerate(valloader):
-                    test_image, test_label = sampled_batch['image'], sampled_batch['label']
+                    test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
                     test_image, test_label = test_image.cuda(), test_label.numpy()
                     outputs = model(test_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
@@ -250,13 +262,20 @@ def train(args, snapshot_path):
                         writer.add_image('val/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
                     pred = pred[0,...]
                     test_label = test_label[0,...]
-                    first_metric = calculate_metric_percase(pred == 1, test_label == 1)
-                    second_metric = calculate_metric_percase(pred == 2, test_label == 2)
-                    third_metric = calculate_metric_percase(pred == 3, test_label == 3)
-                    metric_i = np.array([first_metric,second_metric,third_metric])
+                    case_res = np.stack([pred,test_label])
+                    volume_name,index = tuple(case_name.split('_slice_'))
+                    if volume_name in res_dict.keys():
+                        res_dict[volume_name][index] = case_res
+                    else:
+                        res_dict[volume_name]= {index:case_res}
+                    
+                volume_pred_list, volume_label_list = merge_volume_in_dict(res_dict)
+                for prediction,labs in zip(volume_pred_list,volume_label_list):
+                    first_metric = calculate_metric_percase(prediction == 1, labs == 1)
+                    second_metric = calculate_metric_percase(prediction == 2, labs == 2)
+                    third_metric = calculate_metric_percase(prediction == 3, labs == 3)
+                    metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
                     metric_list.append(metric_i)
-                metric_list = np.stack(metric_list)
-                metric_list[metric_list==None] = np.nan
                 avg_metric = np.nanmean(metric_list,axis=0)
                 performance = np.mean(avg_metric,axis=0)
                 
@@ -339,21 +358,33 @@ if __name__ == "__main__":
 
     snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
         args.exp, args.labeled_num, args.model, args.tag)
+    if os.path.exists(args.snap_path):
+        snapshot_path = args.snap_path
+    if get_train_test_mode(args.train_test_mode) == "only_Testing":
+        args.clean_before_run = False
+    if args.clean_before_run and os.path.exists(snapshot_path):
+        shutil.rmtree(snapshot_path)
     if args.tag == "v99" and os.path.exists(snapshot_path):
         shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
-    if os.path.exists(snapshot_path + '/code'):
+    if os.path.exists(snapshot_path + '/code') and get_train_test_mode(args.train_test_mode) != "only_Testing":
         shutil.rmtree(snapshot_path + '/code')
-    shutil.copytree('.', snapshot_path + '/code',
+        shutil.copytree('.', snapshot_path + '/code',
                     ignore=shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-    logging.info(str(args))
+    if get_train_test_mode(args.train_test_mode) != "only_Testing":
+        logging.info(str(args))
     args.writer = SummaryWriter(snapshot_path + '/log')
-    train(args, snapshot_path)
-    if args.end2Test:
+    if get_train_test_mode(args.train_test_mode) == "only_Training":
+        train(args, snapshot_path)
+    elif get_train_test_mode(args.train_test_mode) == "Train2Test":
+        train(args, snapshot_path)
+        test_pretrain(args, snapshot_path)
+    elif get_train_test_mode(args.train_test_mode) == "only_Testing":
+        args.writer = SummaryWriter(snapshot_path + '/testlog')
         test_pretrain(args, snapshot_path)
     args.writer.close()

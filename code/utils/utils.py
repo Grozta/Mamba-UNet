@@ -1,6 +1,7 @@
 import time
 import os
 import random
+import re
 import numpy as np
 from utils import ramps
 from medpy import metric
@@ -168,6 +169,28 @@ def update_train_loss_MA(args):
         else:
             args.train_loss_MA = args.train_loss_MA_alpha * args.train_loss_MA + (1 - args.train_loss_MA_alpha) * \
                                  args.all_tr_losses[-1]
-                                                           
+                                
+def merge_volume_in_dict(input_dict):
+    """res_dict[volume_name] = {index:case_res}"""
+    volume_pred_list = []
+    volume_label_list = []
+    for context in input_dict.values():
+        volume_pred = []
+        volume_label = []
+        sorted_keys = sorted(context.keys())
+        for key in sorted_keys:
+            volume_pred.append(context[key][0])
+            volume_label.append(context[key][1])
+        volume_pred = np.stack(volume_pred)
+        volume_label = np.stack(volume_label)
+        volume_pred_list.append(volume_pred)
+        volume_label_list.append(volume_label)
+  
+    return volume_pred_list, volume_label_list
+
+def extract_iter_number(s):
+    match = re.search(r'iter_(\d+)', s)
+    return int(match.group(1)) if match else float('inf')
+                                         
 if __name__ == "__main__":
     looper(5)

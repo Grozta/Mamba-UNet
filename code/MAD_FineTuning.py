@@ -110,6 +110,10 @@ def train(args, snapshot_path):
             if args.update_log_mode == 1:
                 seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
                 ema_outputs = ema_model(seg_outputs_soft_blend)
+            elif args.update_log_mode == 2:
+                blend_label = torch.softmax((seg_outputs_soft + mask_label_batch)/2,dim=1)
+                seg_outputs_soft_blend = torch.concat([volume_batch,blend_label],dim=1)
+                ema_outputs = ema_model(seg_outputs_soft_blend)
             else:
                 ema_outputs = ema_model(seg_outputs_soft)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)

@@ -333,14 +333,14 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--exp", "ACDC/MAD_FineTuning",
-                "--batch_size","12",
+                "--batch_size","16",
                 "--patch_size","224",
-                "--input_channels_mad","4",
+                "--input_channels_mad","5",
                 "--seg_model","ViM_seg",
                 "--pretrain_path_seg","../data/pretrain/seg_model_ViM.pth",
-                "--pretrain_path_mad","../model/ACDC/TrainLabelPretrain_140_labeled/unet_v4.2/unet_best_model.pth",
+                "--pretrain_path_mad","../model/ACDC/TrainLabelPretrain_140_labeled/unet_v4.8/iter_8800.pth",
                 "--train_struct_mode","2",
-                "--update_log_mode","0",
+                "--update_log_mode","2",
                 "--test_iterations","660",
                 "--train_test_mode","1",
                 "--clean_before_run"

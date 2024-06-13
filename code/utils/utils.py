@@ -1,7 +1,9 @@
 import time
 import os
+import re
 import random
 import numpy as np
+from torch.optim import lr_scheduler
 from utils import ramps
 from medpy import metric
 
@@ -161,6 +163,17 @@ def improvement_log(struct_mode,log_mode):
                 get_model_struct_mode(1): ref_struct2_dict, 
                 get_model_struct_mode(2): ref_struct3_dict}
     return ref_dict[str(struct_mode)][str(log_mode)]
+
+def extract_iter_number(s):
+    match = re.search(r'iter_(\d+)', s)
+    return int(match.group(1)) if match else float('inf')
+
+def update_train_loss_MA(args):
+    if args.train_loss_MA is None:
+        args.train_loss_MA = args.all_tr_losses[-1]
+    else:
+        args.train_loss_MA = args.train_loss_MA_alpha * args.train_loss_MA + (1 - args.train_loss_MA_alpha) * \
+                                args.all_tr_losses[-1]
 
 if __name__ == "__main__":
     looper(5)

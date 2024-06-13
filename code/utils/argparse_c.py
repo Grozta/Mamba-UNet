@@ -37,8 +37,18 @@ parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
-parser.add_argument('--base_lr', type=float,  default=0.01,
-                    help='segmentation network learning rate')
+parser.add_argument('--initial_lr', type=float,  default=3e-4,
+                    help='initial segmentation network learning rate')
+parser.add_argument('--lr_threshold', type=float,  default=1e-6,
+                    help='mim learning rate')
+parser.add_argument('--weight_decay', type=float,  default=3e-5,
+                    help='Adam weight_decay')
+parser.add_argument('--lr_scheduler_eps', type=float,  default=1e-3,
+                    help='Only when the change amount exceeds this value, it will be considered to have a significant change.')
+parser.add_argument('--lr_scheduler_patience', type=float,  default=20,
+                    help='lr_scheduler_patience')
+parser.add_argument('--train_loss_MA_alpha', type=float,  default=0.93,
+                    help='train loss Move Avarge alpha value')
 parser.add_argument('--patch_size', type=int,  default=224,
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, 

@@ -22,7 +22,7 @@ from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
 from utils import losses
-from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, calculate_metric_percase, get_train_test_mode,worker_init_fn,improvement_log
+from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, update_train_loss_MA, get_train_test_mode,worker_init_fn,improvement_log
 from utils.argparse_c import parser
 from val_2D import test_single_volume_for_trainLabel
 
@@ -103,9 +103,10 @@ def train(args, snapshot_path):
     max_epoch = args.max_iterations // len(trainloader) + 1
     best_performance = 0.0
     iterator = tqdm(range(max_epoch), ncols=70)
+    args.all_tr_losses = []
     for epoch_num in iterator:
+        args.train_losses_epoch = []
         for i_batch, sampled_batch in enumerate(trainloader):
-
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
                        
@@ -139,7 +140,7 @@ def train(args, snapshot_path):
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
             loss = seg_loss + mad_loss + ema_loss
-            
+        
             optimizer_seg.zero_grad()
             optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
@@ -147,7 +148,10 @@ def train(args, snapshot_path):
             optimizer_seg.step()
             optimizer_mad.step()
             optimizer_ema.step()
-
+            
+            args.train_losses_epoch.append(loss.detach().cpu().numpy())
+            update_train_loss_MA(args)
+            
             lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
             for param_group_seg,param_group_ema,param_group_mad in zip(optimizer_seg.param_groups,optimizer_ema.param_groups,optimizer_mad.param_groups):
                 param_group_seg['lr'] = lr_
@@ -197,6 +201,7 @@ def train(args, snapshot_path):
                 seg_model.eval()
                 ema_model.eval()
                 metric_list = 0.0 # 3x2
+                val_losses = []
                 for i_batch, sampled_batch in enumerate(valloader):
                     metric_i = test_single_volume_for_trainLabel(
                         sampled_batch["image"], sampled_batch["label"], seg_model, 
@@ -232,7 +237,6 @@ def train(args, snapshot_path):
                         torch.save(model_state, save_mode_path)
                         logging.info("save_best_iter_model to {}".format(save_mode_path))
 
-                
                 seg_model.train()
                 ema_model.train()
 
@@ -251,7 +255,7 @@ def train(args, snapshot_path):
         if iter_num >= args.max_iterations:
             iterator.close()
             break
-
+        args.all_tr_losses.append(np.mean(args.train_losses_epoch))
     return "Training Finished!"
 
 

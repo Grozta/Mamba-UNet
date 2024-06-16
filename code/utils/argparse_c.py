@@ -43,11 +43,13 @@ parser.add_argument('--lr_threshold', type=float,  default=1e-6,
                     help='mim learning rate')
 parser.add_argument('--weight_decay', type=float,  default=3e-5,
                     help='Adam weight_decay')
+parser.add_argument('--lr_scheduler_factor', type=float,  default=0.8,
+                    help='lr_scheduler factor')
 parser.add_argument('--lr_scheduler_eps', type=float,  default=1e-3,
                     help='Only when the change amount exceeds this value, it will be considered to have a significant change.')
-parser.add_argument('--lr_scheduler_patience', type=float,  default=20,
+parser.add_argument('--lr_scheduler_patience', type=float,  default=10,
                     help='lr_scheduler_patience')
-parser.add_argument('--train_loss_MA_alpha', type=float,  default=0.93,
+parser.add_argument('--train_loss_MA_alpha', type=float,  default=0.83,
                     help='train loss Move Avarge alpha value')
 parser.add_argument('--patch_size', type=int,  default=224,
                     help='patch size of network input')

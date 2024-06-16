@@ -88,13 +88,13 @@ def train(args, snapshot_path):
     
     optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)
-    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=0.2,
+    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
                                                         verbose=True, threshold=args.lr_scheduler_eps,
                                                         threshold_mode="abs")
     optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)
-    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=0.2,
+    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
                                                         verbose=True, threshold=args.lr_scheduler_eps,
                                                         threshold_mode="abs")

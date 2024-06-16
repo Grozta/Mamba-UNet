@@ -12,6 +12,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim import lr_scheduler
 from tensorboardX import SummaryWriter
 from torch.nn.modules.loss import CrossEntropyLoss
 from torch.utils.data import DataLoader
@@ -22,7 +23,7 @@ from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
 from utils import losses
-from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, update_train_loss_MA, get_train_test_mode,worker_init_fn,improvement_log
+from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, update_train_loss_MA, get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,extract_iter_number
 from utils.argparse_c import parser
 from val_2D import test_single_volume_for_trainLabel
 
@@ -34,6 +35,7 @@ def test_fine_tune(args, snapshot_path):
     db_test = BaseDataSets(base_dir=args.root_path, split="test") 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
     pth_list = get_pth_files(snapshot_path)
+    pth_list = sorted(pth_list, key=extract_iter_number)
     iterator = tqdm(range(len(pth_list)), ncols=70)
     metric_list = []
     for iter_num in iterator:
@@ -65,6 +67,7 @@ def test_fine_tune(args, snapshot_path):
 
 def train(args, snapshot_path):
     writer = args.writer
+    args.train_loss_MA = None
     logging.info("Current model struction is : {},".format(get_model_struct_mode(args.train_struct_mode)))
     logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
@@ -84,12 +87,24 @@ def train(args, snapshot_path):
     mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     mad_model.load_state_dict(mad_model_pretrained_dict)
     
-    optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.base_lr,
-                          momentum=0.9, weight_decay=0.0001)
-    optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.base_lr,
-                          momentum=0.9, weight_decay=0.0001)
-    optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.base_lr,
-                          momentum=0.9, weight_decay=0.0001)
+    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=0.8,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
+    optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=0.8,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
+    optimizer_mad = torch.optim.Adam(mad_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_mad = lr_scheduler.ReduceLROnPlateau(optimizer_mad, mode='min', factor=0.8,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
     seg_model.train()
     ema_model.train()
     mad_model.train()
@@ -102,10 +117,11 @@ def train(args, snapshot_path):
     iter_num = 0
     max_epoch = args.max_iterations // len(trainloader) + 1
     best_performance = 0.0
+    args.all_tr_losses = []
     iterator = tqdm(range(max_epoch), ncols=70)
     args.all_tr_losses = []
     for epoch_num in iterator:
-        args.train_losses_epoch = []
+        train_losses_epoch = []
         for i_batch, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
@@ -140,7 +156,7 @@ def train(args, snapshot_path):
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
             loss = seg_loss + mad_loss + ema_loss
-        
+            
             optimizer_seg.zero_grad()
             optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
@@ -149,18 +165,9 @@ def train(args, snapshot_path):
             optimizer_mad.step()
             optimizer_ema.step()
             
-            args.train_losses_epoch.append(loss.detach().cpu().numpy())
-            update_train_loss_MA(args)
-            
-            lr_ = args.base_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
-            for param_group_seg,param_group_ema,param_group_mad in zip(optimizer_seg.param_groups,optimizer_ema.param_groups,optimizer_mad.param_groups):
-                param_group_seg['lr'] = lr_
-                param_group_ema['lr'] = lr_
-                param_group_mad['lr'] = lr_
-                
+            train_losses_epoch.append(loss.cpu().item())    
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
-            iter_num = iter_num + 1
-            writer.add_scalar('info/lr', lr_, iter_num)
+            
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
             writer.add_scalar('info/mad_loss', mad_loss, iter_num)
@@ -195,13 +202,14 @@ def train(args, snapshot_path):
                                  label2color(mad_outputs), iter_num,dataformats='HWC')
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "ema_state_dict":ema_model.state_dict(),
-                           "mad_state_dict":mad_model.state_dict()}    
-                
-            if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
+                           "mad_state_dict":mad_model.state_dict()} 
+            iter_num = iter_num + 1  
+        
+                   
+            if iter_num % (len(trainloader)*1) == 0:
                 seg_model.eval()
                 ema_model.eval()
                 metric_list = 0.0 # 3x2
-                val_losses = []
                 for i_batch, sampled_batch in enumerate(valloader):
                     metric_i = test_single_volume_for_trainLabel(
                         sampled_batch["image"], sampled_batch["label"], seg_model, 
@@ -226,36 +234,40 @@ def train(args, snapshot_path):
                     best_performance = performance[0]
                     writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
                     save_best = os.path.join(snapshot_path,
-                                             'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
+                                                'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
                     torch.save(model_state, save_best)
                     logging.info("save_best_model to {}".format(save_best))
                     
                     if iter_num >len(trainloader)*80:
                         save_mode_path = os.path.join(snapshot_path,
-                                                  'iter_{}_dice_{}.pth'.format(
-                                                      iter_num, round(best_performance, 4)))
+                                                    'iter_{}_dice_{}.pth'.format(
+                                                        iter_num, round(best_performance, 4)))
                         torch.save(model_state, save_mode_path)
                         logging.info("save_best_iter_model to {}".format(save_mode_path))
 
                 seg_model.train()
                 ema_model.train()
-
-            if iter_num % (len(trainloader)*40) == 0:
-                save_mode_path = os.path.join(
-                    snapshot_path, 'iter_' + str(iter_num) + '.pth')
-                torch.save(model_state, save_mode_path)
-                logging.info("save model to {}".format(save_mode_path))
-            
-            if args.tag == 'v99' and iter_num >=args.test_iterations:
-                iterator.close()
-                return "Testing Finished!"
-
-            if iter_num >= args.max_iterations:
-                break
-        if iter_num >= args.max_iterations:
+                
+        epoch_num = epoch_num + 1 
+        if iter_num % (len(trainloader)*40) == 0:
+            save_mode_path = os.path.join(
+                snapshot_path, 'iter_' + str(iter_num) + '.pth')
+            torch.save(model_state, save_mode_path)
+            logging.info("save model to {}".format(save_mode_path))
+        
+        args.all_tr_losses.append(np.mean(train_losses_epoch))
+        update_train_loss_MA(args)
+        lr_scheduler_seg.step(args.train_loss_MA)
+        lr_scheduler_ema.step(args.train_loss_MA)
+        lr_scheduler_mad.step(args.train_loss_MA)
+        writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
+        
+        if args.tag == 'v99' and iter_num >=args.test_iterations:
+            iterator.close()
+            return "Testing Finished!"
+        if iter_num >= args.max_iterations or optimizer_seg.state_dict()['param_groups'][0]['lr'] <= args.lr_threshold:
             iterator.close()
             break
-        args.all_tr_losses.append(np.mean(args.train_losses_epoch))
     return "Training Finished!"
 
 

@@ -3,6 +3,7 @@ import os
 import random
 import re
 import numpy as np
+from torch.optim import lr_scheduler
 from utils import ramps
 from medpy import metric
 
@@ -191,6 +192,14 @@ def merge_volume_in_dict(input_dict):
 def extract_iter_number(s):
     match = re.search(r'iter_(\d+)', s)
     return int(match.group(1)) if match else float('inf')
+
+def update_train_loss_MA(args):
+    if args.train_loss_MA is None:
+        args.train_loss_MA = args.all_tr_losses[-1]
+    else:
+        args.train_loss_MA = args.train_loss_MA_alpha * args.train_loss_MA + (1 - args.train_loss_MA_alpha) * \
+                                args.all_tr_losses[-1]
+
                                          
 if __name__ == "__main__":
     looper(5)

@@ -26,8 +26,6 @@ parser.add_argument('--model_weight_path', type=str,
 parser.add_argument('--save_test',default=False, 
                     action="store_true", help="save test label to filesystem")
 
-
-
 def inference_single_case(case, seg_model, test_save_path, args, writer= None):
     """直接将推理的结果保存在原图中
     h5f["pred_vim_224"][:] = pred
@@ -209,6 +207,54 @@ def Inference_mad_model(args):
     logging.info(f"dsc:{(avg_metric[0]+avg_metric[1]+avg_metric[2])/3}")
     return avg_metric
 
+def Inference_seg_model(args):
+    args.test_mad = False
+    args.save_test = False
+    args.transforms = RandomGeneratorv4(args.patch_size,num_classes=args.num_classes)
+    with open(args.root_path + '/test.list', 'r') as f:
+        image_list = f.readlines()
+    image_list = sorted([item.replace('\n', '').split(".")[0]
+                         for item in image_list])
+    test_save_path = "../model/{}_{}_labeled/{}_{}".format(    
+        args.exp, args.labeled_num, args.model, args.tag)
+    if os.path.exists(test_save_path):
+        shutil.rmtree(test_save_path)
+    os.makedirs(test_save_path)
+    logging.basicConfig(filename=test_save_path+"/log.txt", level=logging.INFO,
+                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+    logging.info(str(args))
+    writer = SummaryWriter(test_save_path + '/log')
+    for key in args.model_name_list.keys():
+        if key == 'unet':
+            args.patch_size = [256,256]
+        else:
+            args.patch_size = [224,224]
+        args.model = key
+        args.model_weight_path = args.model_name_list[key]
+        net = net_factory(args.config,args ,net_type=args.model, in_chns=1, class_num=args.num_classes)
+        print(args.model_weight_path)
+        net.load_state_dict(torch.load(args.model_weight_path),strict=False)
+        print("init weight from {}".format(args.model_weight_path))
+        net.eval()
+
+        first_total = 0.0
+        second_total = 0.0
+        third_total = 0.0
+        for case in tqdm(image_list):
+            first_metric, second_metric, third_metric = test_single_volume(
+                case, net, test_save_path, args, writer)
+            logging.info(f"{case}:[{first_metric}_{second_metric}_{third_metric}]")
+            first_total += np.asarray(first_metric)
+            second_total += np.asarray(second_metric)
+            third_total += np.asarray(third_metric)
+        avg_metric = [first_total / len(image_list), second_total /
+                    len(image_list), third_total / len(image_list)]
+        
+        logging.info(f"[{key}]_cls_dice:{avg_metric}")
+        logging.info(f"[{key}]_dsc:{(avg_metric[0]+avg_metric[1]+avg_metric[2])/3}")
+        writer.add_text(f"[{key}]",f"{str(avg_metric)}")
+    return avg_metric
+
 
 def Inference_seg_ema_model(args):
     with open(args.root_path + '/test.list', 'r') as f:
@@ -313,7 +359,7 @@ if __name__ == '__main__':
     args.config = get_config(args)
     args.test_mad = False
     args.root_path = "/media/grozta/SOYO/DATASET/ACDC"
-    current_mode = "Inference_seg_model_genarate_new_dataset"
+    current_mode = "Inference_seg_model"
     
     # 测试mad的恢复效果
     if current_mode == "Inference_mad_model":
@@ -323,6 +369,18 @@ if __name__ == '__main__':
         args.patch_size = [256,256]
         args.tag = "v1"
         metric = Inference_mad_model(args)
+    
+    # 测试seg的预测效果
+    if current_mode == "Inference_seg_model":
+        args.test_mad = True
+        args.exp = "test/seg_model"
+        args.model = 'Test_all_seg'
+        args.labeled_num = 140
+        args.model_name_list = {"ViT_seg":"../data/pretrain/seg_model_ViT.pth","ViM_seg":"../data/pretrain/seg_model_ViM.pth","unet":"../data/pretrain/seg_model_unet.pth"}
+        args.patch_size = [256,256]
+        args.tag = "v3"
+        args.config = get_config(args)
+        metric = Inference_seg_model(args)
         
     # 将seg的输出直接给ema，测试该过程的修复效果
     if current_mode == "Inference_seg_ema_model":

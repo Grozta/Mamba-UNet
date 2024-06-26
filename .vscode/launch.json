@@ -359,7 +359,6 @@
             "justMyCode": false,
             "args": [
                 "--root_path", "/home/grozta/Desktop/DATASET/ACDC",
-                "--labeled_num", "140",
                 "--tag","v1"
             ], // python test_2D_fully.py --root_path /home/grozta/Desktop/DATASET/ACDC --exp ACDC/Fully_Supervised --labeled_num 140
             "env": {

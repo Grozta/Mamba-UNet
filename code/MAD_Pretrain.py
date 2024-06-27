@@ -91,7 +91,7 @@ def test_pretrain(args, snapshot_path):
         res_dict = {}
         for i_batch, sampled_batch in enumerate(testloader):
             test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
-            test_image, test_label,case_name = test_image.cuda(), test_label.numpy(),case_name[0]
+            test_image, test_label = test_image.cuda(), test_label.numpy()
             outputs = model(test_image)
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             if args.image_fusion_mode in [7]:

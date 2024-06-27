@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--snap_path', type=str,
                     default='xxx', help='path of Experiment')
 parser.add_argument('--root_path', type=str,
-                    default='../data/ACDC', help='Name of Experiment')
+                    default='../data/ACDC', help='root path of Datasets')
 parser.add_argument('--exp', type=str,
                     default='ACDC/MAD_Pretrain', help='experiment_name')
 parser.add_argument('--tag',type=str,
@@ -49,13 +49,11 @@ parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
 parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
-parser.add_argument('--patch_size', type=list,  default=[224, 224],
+parser.add_argument('--patch_size', type=int, nargs='+', default=[224, 224],
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
-parser.add_argument('--val_num', type=int, default=7,
-                    help='valset patient num')
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
 parser.add_argument('--image_source',type=str,
@@ -119,7 +117,7 @@ def test_pretrain(args, snapshot_path):
             labs = test_label[0, ...]
             writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
             case_res = np.stack([prediction,labs])
-            volume_name,index = tuple(case_name.split('_slice_'))
+            volume_name,index = tuple(case_name[0].split('_slice_'))
             if volume_name in res_dict.keys():
                 res_dict[volume_name][index] = case_res
             else:
@@ -226,7 +224,7 @@ def train(args, snapshot_path):
                 labs = label_batch[0, ...].cpu().numpy()
                 writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
-            if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
+            if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
                 model.eval()
                 metric_list = []
                 display_image = []
@@ -263,7 +261,7 @@ def train(args, snapshot_path):
                     pred = pred[0,...]
                     test_label = test_label[0,...]
                     case_res = np.stack([pred,test_label])
-                    volume_name,index = tuple(case_name.split('_slice_'))
+                    volume_name,index = tuple(case_name[0].split('_slice_'))
                     if volume_name in res_dict.keys():
                         res_dict[volume_name][index] = case_res
                     else:
@@ -339,9 +337,11 @@ def train(args, snapshot_path):
     
 - [v4.6]image+label进行二值化(通道) 作为输入，dim=5
     
-- [v4.7]image+label-mask-进行二值化(通道)作为输入，dim=5
+- [v4.7]image+pred-mask-进行二值化(通道)作为输入，dim=5
     
 - [v4.8]image + seg_pred进行二值化(通道)  作为输入，dim=5
+
+- [v4.11]image+label-mask-进行二值化(通道)作为输入，dim=5
 """
 if __name__ == "__main__":
     if not args.deterministic:
@@ -356,15 +356,12 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "../model/{}_{}_labeled/{}_{}".format(
-        args.exp, args.labeled_num, args.model, args.tag)
+    snapshot_path = "../model/{}/{}_{}".format( args.exp, args.model, args.tag)
     if os.path.exists(args.snap_path):
         snapshot_path = args.snap_path
     if get_train_test_mode(args.train_test_mode) == "only_Testing":
         args.clean_before_run = False
     if args.clean_before_run and os.path.exists(snapshot_path):
-        shutil.rmtree(snapshot_path)
-    if args.tag == "v99" and os.path.exists(snapshot_path):
         shutil.rmtree(snapshot_path)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)

@@ -51,7 +51,7 @@ parser.add_argument('--lr_scheduler_patience', type=float,  default=10,
                     help='lr_scheduler_patience')
 parser.add_argument('--train_loss_MA_alpha', type=float,  default=0.83,
                     help='train loss Move Avarge alpha value')
-parser.add_argument('--patch_size', type=int,  default=224,
+parser.add_argument('--patch_size', type=int, nargs='+', default=[224, 224],
                     help='patch size of network input')
 parser.add_argument('--seed', type=int,  default=1337, 
                     help='random seed')

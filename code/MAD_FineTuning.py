@@ -273,7 +273,6 @@ def train(args, snapshot_path):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    args.patch_size = [args.patch_size,args.patch_size]
     args.config = get_config(args)
     
     if not args.deterministic:

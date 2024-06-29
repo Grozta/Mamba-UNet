@@ -46,10 +46,10 @@ def inference_single_case(case, seg_model, test_save_path, args, writer= None):
 
             out = out.cpu().detach().numpy()
             pred = zoom(out, (x / args.patch_size[0], y / args.patch_size[0]), order=0).astype(np.uint8)
-            if "pred_vim_224" in h5f:
-                h5f["pred_vim_224"][:] = pred
+            if args.pred_save_name in h5f:
+                h5f[args.pred_save_name][:] = pred
             else:
-                h5f.create_dataset('pred_vim_224', data=pred)
+                h5f.create_dataset(args.pred_save_name, data=pred)
             
     with h5py.File(args.root_path + "/data/slices/{}.h5".format(case), 'r') as h5f_s:    
         writer.add_image(f"{case}"+"/input",h5f_s['image'][:], dataformats='HW')
@@ -359,7 +359,7 @@ if __name__ == '__main__':
     args.config = get_config(args)
     args.test_mad = False
     args.root_path = "/media/grozta/SOYO/DATASET/ACDC"
-    current_mode = "Inference_seg_model"
+    current_mode = "Inference_seg_model_genarate_new_dataset"
     
     # 测试mad的恢复效果
     if current_mode == "Inference_mad_model":
@@ -396,9 +396,11 @@ if __name__ == '__main__':
     # 通过seg产生预测结果，并将结果保存在数据集中
     if current_mode == "Inference_seg_model_genarate_new_dataset":
         args.exp = "gen_new_dataset/seg_model"
-        args.patch_size = [224,224]
-        args.seg_model = "ViM_seg"
-        args.pretrain_path_seg = "../data/pretrain/seg_model_ViM.pth"
+        args.patch_size = [256,256]
+        args.seg_model = "unet"
+        args.pretrain_path_seg = "../data/pretrain/seg_model_unet.pth"
+        #args.pred_save_name = "pred_vim_224"
+        args.pred_save_name = "pred_unet_256"
         args.tag = "v2"
         metric = Inference_seg_model_genarate_new_dataset(args)   
     print(metric)

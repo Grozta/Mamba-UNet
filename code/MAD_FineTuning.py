@@ -114,10 +114,8 @@ def train(args, snapshot_path):
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
     max_epoch = args.max_iterations // len(trainloader) + 1
-    iterator = tqdm(range(max_epoch), ncols=70)
-    args.all_tr_losses = []
-    for epoch_num in iterator:
-        train_losses_epoch = []
+    iterator = tqdm(total=len(max_epoch), desc=f'Epoch {start_epoch}',  leave=False, ncols=120,initial=start_epoch)
+    for epoch_num in range(start_epoch, max_epoch):
         for i_batch, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda()
@@ -264,7 +262,7 @@ def train(args, snapshot_path):
                 seg_model.train()
                 ema_model.train()
                 
-        epoch_num = epoch_num + 1 
+        
         if iter_num % (len(trainloader)*40) == 0:
             save_mode_path = os.path.join(
                 snapshot_path, 'iter_' + str(iter_num) + '.pth')
@@ -279,6 +277,7 @@ def train(args, snapshot_path):
         if iter_num >= args.max_iterations or optimizer_seg.state_dict()['param_groups'][0]['lr'] <= args.lr_threshold:
             iterator.close()
             break
+        iterator.update(1) 
     return "Training Finished!"
 
 

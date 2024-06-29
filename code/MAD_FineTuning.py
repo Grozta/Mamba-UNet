@@ -86,26 +86,7 @@ def train(args, snapshot_path):
     ema_model.load_state_dict(mad_model_pretrained_dict)
     mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     mad_model.load_state_dict(mad_model_pretrained_dict)
-    '''
-    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
-    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
-    optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
-    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
-    optimizer_mad = torch.optim.Adam(mad_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
-    lr_scheduler_mad = lr_scheduler.ReduceLROnPlateau(optimizer_mad, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
-    '''
+
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
     optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
     optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
@@ -176,8 +157,8 @@ def train(args, snapshot_path):
                 param_group_seg['lr'] = lr_
                 param_group_mad['lr'] = lr_
                 param_group_ema['lr'] = lr_
+            writer.add_scalar('info/lr', lr_, epoch_num)
             
-            #train_losses_epoch.append(loss.cpu().item())    
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
             writer.add_scalar('info/total_loss', loss, iter_num)
@@ -267,12 +248,7 @@ def train(args, snapshot_path):
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
         
-        # args.all_tr_losses.append(np.mean(train_losses_epoch))
-        # update_train_loss_MA(args)
-        # lr_scheduler_seg.step(args.train_loss_MA)
-        # lr_scheduler_ema.step(args.train_loss_MA)
-        # lr_scheduler_mad.step(args.train_loss_MA)
-        # writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
+        writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()

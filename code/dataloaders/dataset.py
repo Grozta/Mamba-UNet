@@ -360,7 +360,7 @@ def image2binary(img, error_val = 1e-3, num_classes = 4):
     binary_images = []
     for i in range(num_classes):
         binary_image = np.full_like(img,error_val,dtype = np.float32)
-        binary_image[img == i] = 1- error_val
+        binary_image[img == i] = 1.0- error_val
         binary_images.append(binary_image)
     binary_images = np.stack(binary_images)
     return binary_images
@@ -593,7 +593,7 @@ class RandomGeneratorv3(object):
             else:
                 masked_img, _ = random_mask_edge(masked_img,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
                 masked_img, _ = random_mask_puzzle(masked_img,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-        masked_img = image2binary(masked_img,error_val=0.0001, num_classes=self.num_classes)
+        masked_img = image2binary(masked_img,error_val=self.error_val, num_classes=self.num_classes)
         masked_img = np_soft_max(masked_img)
         return masked_img
         
@@ -660,19 +660,19 @@ class RandomGeneratorv3(object):
             if self.image_fusion_mode == 2:
                 image = np.stack([origin_img,label],axis=0)
             if self.image_fusion_mode == 3:
-                b_label = image2binary(label,error_val=0.0001, num_classes=self.num_classes)
+                b_label = image2binary(label,error_val=self.error_val, num_classes=self.num_classes)
                 b_label = np_soft_max(b_label)
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,b_label])
             if self.image_fusion_mode == 5:
-                b_image = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
+                b_image = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
                 b_image = np_soft_max(b_image)
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,b_image])
-            if self.image_fusion_mode in [4,6,7,8]:
+            if self.image_fusion_mode in [4,6,7,8,9]:
                 mask_label = self.do_mask(label)
                 if self.image_fusion_mode == 6:
-                    b_pred = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
+                    b_pred = image2binary(image,error_val=self.error_val, num_classes=self.num_classes)
                     b_pred = np_soft_max(b_pred)
                     mask_label = np_soft_max((mask_label + b_pred)/2)
                 if self.image_fusion_mode == 4 or self.image_fusion_mode == 6:   

@@ -80,13 +80,27 @@ def train(args, snapshot_path):
     
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
     ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
-    seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
-    seg_model.load_state_dict(seg_model_pretrained_dict)
-    mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
-    ema_model.load_state_dict(mad_model_pretrained_dict)
     mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
-    mad_model.load_state_dict(mad_model_pretrained_dict)
 
+    latest_check_point_path = os.path.join(snapshot_path,'latest_check_point.pth')
+    if os.path.exists(latest_check_point_path):
+        latest_check_point_dict = torch.load(args.pretrain_path_seg)
+        seg_model.load_state_dict(latest_check_point_dict["seg_state_dict"])
+        ema_model.load_state_dict(latest_check_point_dict["ema_state_dict"])
+        mad_model.load_state_dict(latest_check_point_dict["mad_state_dict"])
+        iter_num = latest_check_point_dict["iter_num"]
+        best_performance = latest_check_point_dict["best_performance"]
+        start_epoch = iter_num // len(trainloader)
+    else:
+        seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+        mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
+        seg_model.load_state_dict(seg_model_pretrained_dict)
+        ema_model.load_state_dict(mad_model_pretrained_dict)
+        mad_model.load_state_dict(mad_model_pretrained_dict)
+        iter_num = 0
+        best_performance = 0.0
+        start_epoch = 0
+        
     optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
     optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
     optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
@@ -97,13 +111,9 @@ def train(args, snapshot_path):
         
     ce_loss = CrossEntropyLoss()
     dice_loss = losses.DiceLoss(args.num_classes)
-    
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
-    iter_num = 0
     max_epoch = args.max_iterations // len(trainloader) + 1
-    best_performance = 0.0
-    args.all_tr_losses = []
     iterator = tqdm(range(max_epoch), ncols=70)
     args.all_tr_losses = []
     for epoch_num in iterator:
@@ -165,7 +175,7 @@ def train(args, snapshot_path):
                 param_group_seg['lr'] = lr_
                 param_group_mad['lr'] = lr_
                 param_group_ema['lr'] = lr_
-            writer.add_scalar('info/lr', lr_, epoch_num)
+            #writer.add_scalar('info/lr', lr_, epoch_num)
             
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
@@ -203,7 +213,9 @@ def train(args, snapshot_path):
                                     label2color(mad_outputs), iter_num,dataformats='HWC')
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "ema_state_dict":ema_model.state_dict(),
-                           "mad_state_dict":mad_model.state_dict()} 
+                           "mad_state_dict":mad_model.state_dict(),
+                           "iter_num": iter_num,
+                           "best_performance":best_performance}
             
                    
             if iter_num % (len(trainloader)*1) == 0:
@@ -230,8 +242,12 @@ def train(args, snapshot_path):
                                                     "3":metric_list[2][1],
                                                     "avg_hd95":performance[1]}, iter_num)
                 
+                torch.save(model_state, latest_check_point_path)
+                logging.info("save latest_check_point {}".format(latest_check_point_path))
+                
                 if performance[0] > best_performance:
                     best_performance = performance[0]
+                    model_state["performance"] = best_performance
                     writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
                     save_best = os.path.join(snapshot_path,
                                                 'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))

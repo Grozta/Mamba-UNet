@@ -97,7 +97,7 @@ def test_pretrain(args, snapshot_path):
             if args.image_fusion_mode in [7]:
                 image_origin  = test_image[0,...].cpu().numpy()
                 writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin,axis=0)), i_batch,dataformats='HWC')
-            elif args.image_fusion_mode in [3,4,5,6]:
+            elif args.image_fusion_mode in [3,4,5,6,8]:
                 image_origin  = test_image[0,...].cpu().numpy()
                 writer.add_image(f'test_{pth}/Image_origin', image_origin[0], i_batch, dataformats='HW')
                 writer.add_image(f'test_{pth}/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), i_batch,dataformats='HWC')
@@ -144,7 +144,12 @@ def train(args, snapshot_path):
     writer = args.writer
  
     model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes) 
-     
+    if os.path.exists(args.pretrain_path): 
+        model_pretrained_dict = torch.load(args.pretrain_path)
+        model.load_state_dict(model_pretrained_dict)
+        logging.info(f"load prediction : {args.pretrain_path}")
+    else:
+        logging.info(f"NOT load prediction")
     db_train = BaseDataSets4pretrain(args,mode = "train", 
                                      transform=transforms.Compose([RandomGeneratorv3(args)]))
     
@@ -204,7 +209,7 @@ def train(args, snapshot_path):
                 if args.image_fusion_mode in [7]:
                     image_origin  = volume_batch[0,...].cpu().numpy()
                     writer.add_image(f'train/Image_mix', label2color(np.argmax(image_origin,axis=0)), iter_num,dataformats='HWC')
-                elif args.image_fusion_mode in [3,4,5,6]:
+                elif args.image_fusion_mode in [3,4,5,6,8]:
                     image_origin  = volume_batch[0,...].cpu().numpy()
                     writer.add_image('train/Image_origin', image_origin[0], iter_num, dataformats='HW')
                     writer.add_image('train/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
@@ -224,7 +229,7 @@ def train(args, snapshot_path):
                 labs = label_batch[0, ...].cpu().numpy()
                 writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
-            if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
+            if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
                 model.eval()
                 metric_list = []
                 display_image = []
@@ -239,7 +244,7 @@ def train(args, snapshot_path):
                         if args.image_fusion_mode in [7]:
                             image_origin  = test_image[0,...].cpu().numpy()
                             writer.add_image(f'val/Image_mix', label2color(np.argmax(image_origin,axis=0)), iter_num,dataformats='HWC')
-                        elif args.image_fusion_mode in [3,4,5,6]:
+                        elif args.image_fusion_mode in [3,4,5,6,8]:
                             image_origin  = test_image[0,...].cpu().numpy()
                             writer.add_image('val/Image_origin', image_origin[0], iter_num, dataformats='HW')
                             writer.add_image('val/Image_mix', label2color(np.argmax(image_origin[1:],axis=0)), iter_num,dataformats='HWC')
@@ -320,29 +325,6 @@ def train(args, snapshot_path):
 
     return "Training Finished!"
 
-"""
-训练mad模型
-输入情况有8种:
-- [v4.0]lable进行二值化，转化成softmasx的结果 dim=4 再进行mask化, 加扰动0.001
-    
-- [v4.1]seg_pred进行二值化，转化成softmasx的结果 dim=4 再进行mask化
-    
-- [v4.2]seg_pred进行二值化，转化成softmasx的结果 dim=4
-    
-- [v4.3]seg_pred直接作为输入， dim=1
-    
-- [v4.4]image + seg_pred(通道) 作为输入，dim=2
-    
-- [v4.5]image+label(通道)作为输入，dim=2
-    
-- [v4.6]image+label进行二值化(通道) 作为输入，dim=5
-    
-- [v4.7]image+pred-mask-进行二值化(通道)作为输入，dim=5
-    
-- [v4.8]image + seg_pred进行二值化(通道)  作为输入，dim=5
-
-- [v4.11]image+label-mask-进行二值化(通道)作为输入，dim=5
-"""
 if __name__ == "__main__":
     if not args.deterministic:
         cudnn.benchmark = True

@@ -579,6 +579,24 @@ class RandomGeneratorv3(object):
         self.edge_mask_mask_rate = total_value/4/edge_mask_mask_size/edge_mask_mask_size
         
         self.val = random.choice(self.val_list)
+        
+    def do_mask(self,img):
+        masked_img = img.copy()
+        if random.random() > 0.3:
+            self.gen_mask_param()
+            
+            rand = random.random()
+            if rand < 0.20:
+                masked_img, _ = random_mask_puzzle(masked_img,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+            elif rand < 0.85:
+                masked_img, _ = random_mask_edge(masked_img,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+            else:
+                masked_img, _ = random_mask_edge(masked_img,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
+                masked_img, _ = random_mask_puzzle(masked_img,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
+        masked_img = image2binary(masked_img,error_val=0.0001, num_classes=self.num_classes)
+        masked_img = np_soft_max(masked_img)
+        return masked_img
+        
 
     def __call__(self, sample):
         image, label = sample["image"], sample["label"]
@@ -651,21 +669,8 @@ class RandomGeneratorv3(object):
                 b_image = np_soft_max(b_image)
                 origin_img = np.expand_dims(origin_img,axis=0)
                 image = np.concatenate([origin_img,b_image])
-            if self.image_fusion_mode == 4 or self.image_fusion_mode == 6 or self.image_fusion_mode == 7:
-                mask_label = label.copy()
-                if random.random() > 0.3:
-                    self.gen_mask_param()
-                    
-                    rand = random.random()
-                    if rand < 0.20:
-                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-                    elif rand < 0.85:
-                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                    else:
-                        mask_label, _ = random_mask_edge(mask_label,None,self.edge_mask_mask_rate,self.edge_mask_mask_size,self.val)
-                        mask_label, _ = random_mask_puzzle(mask_label,None,self.puzzle_mask_mask_rate,self.puzzle_mask_mask_size)
-                mask_label = image2binary(mask_label,error_val=0.0001, num_classes=self.num_classes)
-                mask_label = np_soft_max(mask_label)
+            if self.image_fusion_mode in [4,6,7,8]:
+                mask_label = self.do_mask(label)
                 if self.image_fusion_mode == 6:
                     b_pred = image2binary(image,error_val=0.0001, num_classes=self.num_classes)
                     b_pred = np_soft_max(b_pred)
@@ -675,7 +680,18 @@ class RandomGeneratorv3(object):
                     image = np.concatenate([origin_img,mask_label]) 
                 if self.image_fusion_mode == 7:
                     image = mask_label
-    
+                if self.image_fusion_mode == 8:
+                    masked_pred = self.do_mask(image)
+                    rand = random.random()
+                    if rand < 0.20:
+                        image = masked_pred
+                    elif rand < 0.85:
+                        image = np_soft_max((masked_pred + mask_label)/2)
+                    else:
+                        image = mask_label
+                    origin_img = np.expand_dims(origin_img,axis=0)
+                    image = np.concatenate([origin_img,image])
+                            
         image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}

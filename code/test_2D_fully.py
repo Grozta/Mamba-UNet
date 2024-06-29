@@ -41,15 +41,23 @@ def inference_single_case(case, seg_model, test_save_path, args, writer= None):
         
         with torch.no_grad():
             out_main = seg_model(input)
-            s_out = torch.softmax(out_main, dim=1)
+            s_out = torch.softmax(out_main, dim=1).cpu()
             out = torch.argmax(s_out, dim=1).squeeze(0)
-
             out = out.cpu().detach().numpy()
             pred = zoom(out, (x / args.patch_size[0], y / args.patch_size[0]), order=0).astype(np.uint8)
-            if args.pred_save_name in h5f:
-                h5f[args.pred_save_name][:] = pred
+            if args.pred_save_name_mode in ["save_4_npy"]:
+                save_data = s_out.squeeze(0).numpy()
+            elif args.pred_save_name_mode in ["save_1_npy"]:
+                save_data = pred
             else:
-                h5f.create_dataset(args.pred_save_name, data=pred)
+                save_data = None
+            if args.pred_save_name in h5f:
+                 del h5f[args.pred_save_name]
+                
+            if args.pred_save_name in h5f:
+                h5f[args.pred_save_name][:] = save_data
+            else:
+                h5f.create_dataset(args.pred_save_name, data=save_data)
             
     with h5py.File(args.root_path + "/data/slices/{}.h5".format(case), 'r') as h5f_s:    
         writer.add_image(f"{case}"+"/input",h5f_s['image'][:], dataformats='HW')
@@ -402,7 +410,9 @@ if __name__ == '__main__':
         args.seg_model = "unet"
         args.pretrain_path_seg = "../data/pretrain/seg_model_unet.pth"
         #args.pred_save_name = "pred_vim_224"
-        args.pred_save_name = "pred_unet_256"
+        #args.pred_save_name = "pred_unet_256"
+        args.pred_save_name = "pred_unet_256_npy"
+        args.pred_save_name_mode = "save_4_npy"
         args.tag = "v3"
         metric = Inference_seg_model_genarate_new_dataset(args)   
     print(metric)

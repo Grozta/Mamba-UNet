@@ -86,7 +86,7 @@ def train(args, snapshot_path):
     ema_model.load_state_dict(mad_model_pretrained_dict)
     mad_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     mad_model.load_state_dict(mad_model_pretrained_dict)
-    
+    '''
     optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)
     lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
@@ -105,6 +105,11 @@ def train(args, snapshot_path):
                                                         patience=args.lr_scheduler_patience,
                                                         verbose=True, threshold=args.lr_scheduler_eps,
                                                         threshold_mode="abs")
+    '''
+    optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
+    optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
+    optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
+    
     seg_model.train()
     ema_model.train()
     mad_model.train()
@@ -165,7 +170,14 @@ def train(args, snapshot_path):
             optimizer_mad.step()
             optimizer_ema.step()
             
-            train_losses_epoch.append(loss.cpu().item())    
+            iter_num = iter_num + 1
+            lr_ = args.initial_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
+            for param_group_seg,param_group_mad,param_group_ema, in zip(optimizer_seg.param_groups,optimizer_mad.param_groups,optimizer_ema.param_groups):
+                param_group_seg['lr'] = lr_
+                param_group_mad['lr'] = lr_
+                param_group_ema['lr'] = lr_
+            
+            #train_losses_epoch.append(loss.cpu().item())    
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
             writer.add_scalar('info/total_loss', loss, iter_num)
@@ -203,7 +215,7 @@ def train(args, snapshot_path):
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "ema_state_dict":ema_model.state_dict(),
                            "mad_state_dict":mad_model.state_dict()} 
-            iter_num = iter_num + 1  
+            
         
                    
             if iter_num % (len(trainloader)*1) == 0:
@@ -255,12 +267,12 @@ def train(args, snapshot_path):
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
         
-        args.all_tr_losses.append(np.mean(train_losses_epoch))
-        update_train_loss_MA(args)
-        lr_scheduler_seg.step(args.train_loss_MA)
-        lr_scheduler_ema.step(args.train_loss_MA)
-        lr_scheduler_mad.step(args.train_loss_MA)
-        writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
+        # args.all_tr_losses.append(np.mean(train_losses_epoch))
+        # update_train_loss_MA(args)
+        # lr_scheduler_seg.step(args.train_loss_MA)
+        # lr_scheduler_ema.step(args.train_loss_MA)
+        # lr_scheduler_mad.step(args.train_loss_MA)
+        # writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()

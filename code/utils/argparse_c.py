@@ -37,7 +37,7 @@ parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
-parser.add_argument('--initial_lr', type=float,  default=3e-4,
+parser.add_argument('--initial_lr', type=float,  default=1e-2,
                     help='initial segmentation network learning rate')
 parser.add_argument('--lr_threshold', type=float,  default=1e-6,
                     help='mim learning rate')

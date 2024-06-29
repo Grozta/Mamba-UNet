@@ -324,8 +324,8 @@ def Inference_seg_model_genarate_new_dataset(args):
                 i = item.replace("\n", "")
                 args.sample_list.append(i)
     print("total {} samples".format(len(args.sample_list)))
-    test_save_path = "../model/{}_{}_labeled/{}_{}".format(    
-        args.exp, args.labeled_num, args.model, args.tag)
+    test_save_path = "../model/{}/{}_{}".format(    
+        args.exp, args.model, args.tag)
     if os.path.exists(test_save_path):
         shutil.rmtree(test_save_path)
     os.makedirs(test_save_path)
@@ -358,7 +358,6 @@ def Inference_seg_model_genarate_new_dataset(args):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.patch_size = [args.patch_size,args.patch_size]
     args.config = get_config(args)
     args.test_mad = False
     args.root_path = "/media/grozta/SOYO/DATASET/ACDC"
@@ -404,7 +403,7 @@ if __name__ == '__main__':
         args.pretrain_path_seg = "../data/pretrain/seg_model_unet.pth"
         #args.pred_save_name = "pred_vim_224"
         args.pred_save_name = "pred_unet_256"
-        args.tag = "v2"
+        args.tag = "v3"
         metric = Inference_seg_model_genarate_new_dataset(args)   
     print(metric)
     print((metric[0]+metric[1]+metric[2])/3)

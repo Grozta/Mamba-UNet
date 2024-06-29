@@ -310,6 +310,9 @@ def Inference_seg_model_genarate_new_dataset(args):
             args.sample_list = f1.readlines()
         args.sample_list = [item.replace("\n", "") for item in args.sample_list]
     else:
+        with open(args.root_path + "/train_slices.list", "r") as f1:
+            sample_list = f1.readlines()
+            args.sample_list = [item.replace("\n", "") for item in sample_list]
         with open(args.root_path + "/val_slices.list", "r") as f1:
             sample_list = f1.readlines()
             for item in sample_list:

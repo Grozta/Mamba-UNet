@@ -80,11 +80,12 @@ class BaseDataSets(Dataset):
         return sample
 
 class BaseDataSets4pretrain(Dataset):
-    def __init__(self,args ,transform=None,mode = "train"):
+    def __init__(self,args,image_source,transform=None,mode = "train"):
         self.sample_list = []
         self.transform = transform
         self.mode = mode
         self.args = args
+        self.image_source = image_source
 
         with open(self.args.root_path + f"/{self.mode}_slices.list", "r") as f1:
                 self.sample_list = f1.readlines()
@@ -92,7 +93,7 @@ class BaseDataSets4pretrain(Dataset):
         
         random.shuffle(self.sample_list)
         logging.info(f"total {len(self.sample_list)} samples")
-        logging.info(f"Dataset {mode} image source from {self.args.image_source}")
+        logging.info(f"Dataset {mode} image source from {self.image_source}")
         self.fusion_mode = get_image_fusion_mode(self.args.image_fusion_mode)
         logging.info(f"Dataset {mode} input image fusion mode: {self.fusion_mode}")
 
@@ -106,8 +107,8 @@ class BaseDataSets4pretrain(Dataset):
         case_path = self.args.root_path + "/data/slices/{}.h5".format(case)
         h5f = h5py.File(case_path, "r")
             
-        if len(self.args.image_source):
-            image = h5f[self.args.image_source][:]
+        if len(self.image_source):
+            image = h5f[self.image_source][:]
         else:
             image = h5f["label"][:]
         label = h5f["label"][:]
@@ -537,6 +538,22 @@ class RandomGeneratorv2(object):
         image, label = random_crop_2D(image,label,self.output_size)
 
         image = torch.from_numpy(image.astype(np.float32)).unsqueeze(0)
+        label = torch.from_numpy(label.astype(np.long))
+        sample = {"image": image, "label": label}
+        return sample
+class RandomGeneratorv2_1(object):
+    def __init__(self, output_size):
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, origin_img, label = sample["image"],sample["origin_img"], sample["label"]
+        
+        x,y = image.shape[-2], image.shape[-1]
+        zoom_factors = (x / origin_img.shape[0], y / origin_img.shape[1])
+        origin_img = zoom(origin_img, zoom_factors, order=0)
+        origin_img = np.expand_dims(origin_img,axis=0)
+        image = np.concatenate([origin_img,image])
+        image = torch.from_numpy(image.astype(np.float32))
         label = torch.from_numpy(label.astype(np.long))
         sample = {"image": image, "label": label}
         return sample

@@ -373,18 +373,16 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--snap_path","/home/grozta/Desktop/Laboratory/FrameWork/Mamba-UNet/model/ACDC/TrainLabelPretrain_140_labeled/unet_v4.3",
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
-                "--tag","4.3",
-                "--model","unet",
-                "--input_channels","1",
-                "--image_source","pred_vim_224",
-                //"--image_fusion_mode","1",
+                "--mad_model","unet",
+                "--input_channels","5",
+                "--image_source","label",
+                "--image_fusion_mode","4",
                 "--max_iterations","660",
-                "--train_test_mode","2",
+                "--train_test_mode","1",
                 "--image_need_trans",
-                //"--image_need_mask",
-                "--image_noise","0.001"
+                "--image_noise","0.0",
+                "--clean_before_run"
 
             ], // python MAD_Pretrain.py --root_path /media/grozta/SOYO/DATASET/ACDC --tag v2.0 --model unet --input_channels 4 --image_source label --image_need_trans --image_need_mask --image_noise 0.001 --end2Test
             "env": {

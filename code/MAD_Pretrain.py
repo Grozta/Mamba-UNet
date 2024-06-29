@@ -19,9 +19,10 @@ from torchvision import transforms
 from torchvision.utils import make_grid
 from tqdm import tqdm
 
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4pretrain, RandomGeneratorv3
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets4pretrain, RandomGeneratorv3,RandomGeneratorv2_1
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
+from scipy.ndimage import zoom
 from utils.utils import calculate_metric_percase, label2color, get_pth_files,merge_volume_in_dict,get_train_test_mode,extract_iter_number
 
 parser = argparse.ArgumentParser()
@@ -33,10 +34,14 @@ parser.add_argument('--exp', type=str,
                     default='ACDC/MAD_Pretrain', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
-parser.add_argument('--model', type=str,
-                    default='unet', help='model_name')
-parser.add_argument('--pretrain_path', type=str,
-                    default='../data/pretrain/xxxx.pth', help='pretrain model path')
+parser.add_argument('--mad_model', type=str,
+                    default='unet', help='mad_model_name and ema_model name')
+parser.add_argument('--seg_model', type=str,
+                    default='unet', help='seg_model name')
+parser.add_argument('--pretrain_path_seg', type=str,
+                    default='../data/pretrain/seg_model_unet.pth', help='pretrain seg_model path')
+parser.add_argument('--pretrain_path_mad', type=str,
+                    default='../data/pretrain/xxxx.pth', help='pretrain mad_model path')
 parser.add_argument('--input_channels', type=int,  default=4,
                     help='Number of input channels about network')
 parser.add_argument('--num_classes', type=int,  default=4,
@@ -56,8 +61,8 @@ parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
 parser.add_argument('--num_workers', type=int, default=8,
                     help='numbers of workers in dataloader')
-parser.add_argument('--image_source',type=str,
-                    default='label', help='The field name of the image source.options:[label,pred_vim_224]')
+parser.add_argument('--image_source',type=str,choices=["label","pred_vim_224","pred_unet_256","pred_unet_256_npy"],
+                    default='label', help='The field name of the image source.')
 parser.add_argument('--image_fusion_mode',type=int, default=0,
                     help='Image fusion mode.options:[0,1,2,3,4,5,6,7]')
 parser.add_argument('--image_need_trans',default=False, 
@@ -74,9 +79,14 @@ args = parser.parse_args()
 
 def test_pretrain(args, snapshot_path):
     writer = args.writer
-    model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes)
-    db_test = BaseDataSets4pretrain(args,mode = "test",
-                                   transform=transforms.Compose([RandomGeneratorv3(args)])) 
+    # seg_model = net_factory(None,args,net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
+    # seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+    # seg_model.load_state_dict(seg_model_pretrained_dict)
+    # seg_model.eval()
+    
+    model = net_factory(None,args,net_type=args.mad_model, in_chns=args.input_channels, class_num=args.num_classes)
+    db_test = BaseDataSets4pretrain(args,image_source= "pred_unet_256_npy",mode = "test",
+                                   transform=transforms.Compose([RandomGeneratorv2_1(args)])) 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
     pth_list = get_pth_files(snapshot_path)
     pth_list = sorted(pth_list, key=extract_iter_number)
@@ -92,6 +102,7 @@ def test_pretrain(args, snapshot_path):
         for i_batch, sampled_batch in enumerate(testloader):
             test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
             test_image, test_label = test_image.cuda(), test_label.numpy()
+            #seg_pred = torch.softmax(seg_model(test_image), dim=1)
             outputs = model(test_image)
             pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
             if args.image_fusion_mode in [7]:
@@ -113,8 +124,12 @@ def test_pretrain(args, snapshot_path):
                 writer.add_image(f'test_{pth}/Image', label2color(image), i_batch,dataformats='HWC')
                 
             prediction = pred[0]
-            writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
             labs = test_label[0, ...]
+            x,y = labs.shape[-2], labs.shape[-1]
+            zoom_factors = (x / prediction.shape[0], y / prediction.shape[1])
+            prediction = zoom(prediction, zoom_factors, order=0)
+            
+            writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
             writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
             case_res = np.stack([prediction,labs])
             volume_name,index = tuple(case_name[0].split('_slice_'))
@@ -143,18 +158,21 @@ def train(args, snapshot_path):
     max_iterations = args.max_iterations
     writer = args.writer
  
-    model = net_factory(None,args,net_type=args.model, in_chns=args.input_channels, class_num=args.num_classes) 
-    if os.path.exists(args.pretrain_path): 
-        model_pretrained_dict = torch.load(args.pretrain_path)
+    model = net_factory(None,args,net_type=args.mad_model, in_chns=args.input_channels, class_num=args.num_classes) 
+    if os.path.exists(args.pretrain_path_mad): 
+        model_pretrained_dict = torch.load(args.pretrain_path_mad)
         model.load_state_dict(model_pretrained_dict)
-        logging.info(f"load prediction : {args.pretrain_path}")
+        logging.info(f"load prediction : {args.pretrain_path_mad}")
     else:
         logging.info(f"NOT load prediction")
-    db_train = BaseDataSets4pretrain(args,mode = "train", 
+    # seg_model = net_factory(None,args,net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
+    # seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+    # seg_model.load_state_dict(seg_model_pretrained_dict)   
+      
+    db_train = BaseDataSets4pretrain(args,image_source= args.image_source,mode = "train", 
                                      transform=transforms.Compose([RandomGeneratorv3(args)]))
-    
-    db_val = BaseDataSets4pretrain(args,mode = "val",
-                                   transform=transforms.Compose([RandomGeneratorv3(args)]))
+    db_val = BaseDataSets4pretrain(args,image_source= "pred_unet_256_npy",mode = "val",
+                                   transform=transforms.Compose([RandomGeneratorv2_1(args.patch_size)]))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -231,13 +249,14 @@ def train(args, snapshot_path):
 
             if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
                 model.eval()
+                #seg_model.eval()
                 metric_list = []
-                display_image = []
                 random_number = np.random.randint(0, len(valloader))
                 res_dict = {}
                 for i_batch, sampled_batch in enumerate(valloader):
                     test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
                     test_image, test_label = test_image.cuda(), test_label.numpy()
+                    #seg_pred = torch.softmax(seg_model(test_image), dim=1)
                     outputs = model(test_image)
                     pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
                     if i_batch == random_number:
@@ -265,6 +284,10 @@ def train(args, snapshot_path):
                         writer.add_image('val/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
                     pred = pred[0,...]
                     test_label = test_label[0,...]
+                    x,y = test_label.shape[-2], test_label.shape[-1]
+                    zoom_factors = (x / pred.shape[0], y / pred.shape[1])
+                    pred = zoom(pred, zoom_factors, order=0)
+                    
                     case_res = np.stack([pred,test_label])
                     volume_name,index = tuple(case_name[0].split('_slice_'))
                     if volume_name in res_dict.keys():
@@ -297,7 +320,7 @@ def train(args, snapshot_path):
                     best_performance = performance[0]
                     writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
                     save_best = os.path.join(snapshot_path,
-                                             '{}_best_model.pth'.format(args.model))
+                                             '{}_best_model.pth'.format(args.mad_model))
                     torch.save(model.state_dict(), save_best)
                     logging.info("save_best_model to {}".format(save_best))
                     
@@ -338,7 +361,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "../model/{}/{}_{}".format( args.exp, args.model, args.tag)
+    snapshot_path = "../model/{}/{}_{}".format( args.exp, args.mad_model, args.tag)
     if os.path.exists(args.snap_path):
         snapshot_path = args.snap_path
     if get_train_test_mode(args.train_test_mode) == "only_Testing":

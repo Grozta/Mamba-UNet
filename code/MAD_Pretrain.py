@@ -247,7 +247,7 @@ def train(args, snapshot_path):
                 labs = label_batch[0, ...].cpu().numpy()
                 writer.add_image('train/GroundTruth',label2color(labs), iter_num,dataformats='HWC')
 
-            if iter_num > 0 and iter_num % (len(trainloader)*4) == 0:
+            if iter_num > 0 and iter_num % (len(trainloader)*1) == 0:
                 model.eval()
                 #seg_model.eval()
                 metric_list = []
@@ -332,7 +332,7 @@ def train(args, snapshot_path):
                     
                 model.train()
 
-            if iter_num % (len(trainloader)*40) == 0:
+            if iter_num % (len(trainloader)*20) == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)

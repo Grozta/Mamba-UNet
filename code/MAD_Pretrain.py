@@ -324,12 +324,11 @@ def train(args, snapshot_path):
                     torch.save(model.state_dict(), save_best)
                     logging.info("save_best_model to {}".format(save_best))
                     
-                    if iter_num >len(trainloader)*80:
-                        save_mode_path = os.path.join(snapshot_path,
-                                                  'iter_{}_dice_{}.pth'.format(
-                                                      iter_num, round(best_performance, 4)))
-                        torch.save(model.state_dict(), save_mode_path)
-                        logging.info("save_best_iter_model to {}".format(save_mode_path))
+                    save_mode_path = os.path.join(snapshot_path,
+                                                'iter_{}_dice_{}.pth'.format(
+                                                    iter_num, round(best_performance, 4)))
+                    torch.save(model.state_dict(), save_mode_path)
+                    logging.info("save_best_iter_model to {}".format(save_mode_path))
                     
                 model.train()
 
@@ -372,8 +371,8 @@ if __name__ == "__main__":
         os.makedirs(snapshot_path)
     if os.path.exists(snapshot_path + '/code') and get_train_test_mode(args.train_test_mode) != "only_Testing":
         shutil.rmtree(snapshot_path + '/code')
-        shutil.copytree('.', snapshot_path + '/code',
-                    ignore=shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
+    shutil.copytree('.', snapshot_path + '/code',
+                ignore=shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')

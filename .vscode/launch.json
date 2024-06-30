@@ -375,11 +375,13 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--mad_model","unet",
+                "--pretrain_path_mad","../model/ACDC/MAD_Pretrain/unet_v5.0/unet_best_model.pth",
                 "--input_channels","5",
-                "--image_source","label",
-                "--image_fusion_mode","4",
+                "--image_source","pred_unet_256_npy",
+                "--image_fusion_mode","9",
                 "--max_iterations","660",
                 "--train_test_mode","1",
+                "--patch_size","256","256",
                 "--image_need_trans",
                 "--image_noise","0.0",
                 "--clean_before_run"

@@ -95,14 +95,15 @@ def label2color(label,class_num=4):
 
 def get_image_fusion_mode(mode):
     ref_dict = {"0": "不使用图像融合", 
-                "1": "seg_pred + image作为输入,dim=2", 
-                "2": "label + image作为输入,dim=2", 
-                "3": "label进行二值化 + image作为输入,dim=5", 
-                "4": "label进行二值化,mask + image作为输入,dim=5",
-                "5": "pred进行二值化+ image作为输入,dim=5", 
-                "6": "(pred进行二值化和label_mask)/2+ image作为输入,dim=5", 
+                "1": "image + seg_pred作为输入,dim=2", 
+                "2": "image + label作为输入,dim=2", 
+                "3": "image + label进行二值化作为输入,dim=5", 
+                "4": "image + label进行二值化,mask作为输入,dim=5",
+                "5": "image+pred进行二值化作为输入,dim=5", 
+                "6": "image + (pred进行二值化和label_mask)/2作为输入,dim=5", 
                 "7": "(lable-mask+ seg_pred进行二值化))/2 作为输入,dim=4",
-                "8": "(lable-mask,pred-mask)挑选融合  + image作为输入,dim=5"
+                "8": "image+(lable-mask,pred-mask)挑选融合作为输入,dim=5",
+                "9": "image +(pred)作为输入,dim=5"
                 }
     return ref_dict[str(mode)]
 

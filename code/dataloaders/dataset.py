@@ -209,20 +209,23 @@ def random_crop_2D(image, label, output_size=(256, 256)):
     return  image, label
 
 def random_crop_2D_list(images, output_size=(256, 256)):
-    # pad the sample if necessary
-    if images[0].shape[0] <= output_size[0] or images[0].shape[1] <= output_size[1] :
-        pw = max((output_size[0] - images[0].shape[0]) // 2 + 3, 0)
-        ph = max((output_size[1] - images[0].shape[1]) // 2 + 3, 0)
-        
-        for idx, image in enumerate(images):
-            images[idx] = np.pad(image, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
-        
-    (w, h) = images[0].shape
-    w1 = np.random.randint(0, w - output_size[0])
-    h1 = np.random.randint(0, h - output_size[1])
-    res_imgs = []    
+    res_imgs = []
     for image in images:
-        image = image[w1:w1 + output_size[0], h1:h1 + output_size[1]]
+        if image.shape[-2] <= output_size[-2] or image.shape[-1] <= output_size[-1] :
+            pw = max((output_size[-2] - image.shape[-2]) // 2 + 3, 0)
+            ph = max((output_size[-2] - image.shape[-1]) // 2 + 3, 0)
+            if len(image.shape) == 2:
+                image = np.pad(image, [(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+            else:
+                image = np.pad(image, [(0,0),(pw, pw), (ph, ph)], mode='constant', constant_values=0)
+            
+        w, h = image.shape[-2:]
+        w1 = np.random.randint(0, w - output_size[0])
+        h1 = np.random.randint(0, h - output_size[1])
+        if len(image.shape) == 2:
+            image = image[w1:w1 + output_size[-2], h1:h1 + output_size[-2]]
+        else:
+            image = image[:,w1:w1 + output_size[-2], h1:h1 + output_size[-2]]
         res_imgs.append(image)
     return res_imgs
 
@@ -257,11 +260,18 @@ def random_scale_2D( image, label, scale_range=(0.8, 1.2)):
 
 def random_scale_2D_list(images):
     random_scale = np.random.uniform(0.8, 1.2)
-    x, y = images[0].shape
     res_imgs = []
     for image in images:
-        image = zoom(image, random_scale, order=0)
-        res_imgs.append(image)
+        if len(image.shape) == 2:
+            image = zoom(image, random_scale, order=0)
+            res_imgs.append(image)
+        else:
+            res_img = []
+            for i in range(image.shape[0]):
+                item_img = zoom(image[i], random_scale, order=0).copy()
+                res_img.append(item_img)
+            res_imgs.append(np.array(res_img))
+            
     return tuple(res_imgs)
 
 def random_scale_2D_mask( image, label, mask_label, scale_range=(0.8, 1.2)):
@@ -284,11 +294,18 @@ def resize_data(image, label,output_size=(256, 256)):
     return image, label
 
 def resize_data_list(images,output_size=(256, 256)):
-    x, y = images[0].shape[-2], images[0].shape[-1]
+    x, y = images[-1].shape[-2], images[-1].shape[-1]
     res_imgs = []
     for image in images:
-        image = zoom(image, (output_size[0] / x, output_size[1] / y), order=0)   
-        res_imgs.append(image)
+        if len(image.shape) == 2:
+            image = zoom(image, (output_size[0] / x, output_size[1] / y), order=0)   
+            res_imgs.append(image)
+        else:
+            res_img = []
+            for i in range(image.shape[0]):
+                item_img = zoom(image[i], (output_size[0] / x, output_size[1] / y), order=0)
+                res_img.append(item_img)
+            res_imgs.append(np.array(res_img))
     return tuple(res_imgs)
 
 def random_mask(image, label, mask_rate=0.25):
@@ -422,9 +439,18 @@ def random_rot_flip_list(images):
     axis = np.random.randint(0, 2)
     res_imgs = []
     for img in images:
-        img = np.rot90(img, k)
-        img = np.flip(img, axis=axis).copy()
-        res_imgs.append(img)
+        if len(img.shape) == 2:
+            img = np.rot90(img, k)
+            img = np.flip(img, axis=axis).copy()
+            res_imgs.append(img)
+        else:
+            res_img = []
+            for i in range(img.shape[0]):
+                item_img = np.rot90(img[i], k=k)
+                item_img = np.flip(item_img, axis=axis).copy()
+                res_img.append(item_img)
+            res_imgs.append(np.array(res_img))
+            
     return tuple(res_imgs)
 
 def random_rotate(image, label):
@@ -436,9 +462,16 @@ def random_rotate(image, label):
 def random_rotate_list(images):
     angle = np.random.randint(-20, 20)
     res_imgs = []
-    for image in images:
-        image = ndimage.rotate(image, angle, order=0, reshape=False)
-        res_imgs.append(image)
+    for img in images:
+        if len(img.shape) == 2:
+            img = ndimage.rotate(img, angle, order=0, reshape=False)
+            res_imgs.append(img)
+        else:
+            res_img = []
+            for i in range(img.shape[0]):
+                item_img = ndimage.rotate(img[i], angle, order=0, reshape=False).copy()
+                res_img.append(item_img)
+            res_imgs.append(np.array(res_img))
     return tuple(res_imgs)
 
 
@@ -698,14 +731,18 @@ class RandomGeneratorv3(object):
                 if self.image_fusion_mode == 7:
                     image = mask_label
                 if self.image_fusion_mode == 8:
-                    masked_pred = self.do_mask(image)
+                    #masked_pred = self.do_mask(image)
+                    pred = image
                     rand = random.random()
-                    if rand < 0.20:
-                        image = masked_pred
-                    elif rand < 0.85:
-                        image = np_soft_max((masked_pred + mask_label)/2)
+                    if rand < 0.33:
+                        image = pred
+                    elif rand < 0.66:
+                        image = np_soft_max((pred + mask_label)/2)
                     else:
                         image = mask_label
+                    origin_img = np.expand_dims(origin_img,axis=0)
+                    image = np.concatenate([origin_img,image])
+                if self.image_fusion_mode == 9:
                     origin_img = np.expand_dims(origin_img,axis=0)
                     image = np.concatenate([origin_img,image])
                             

@@ -65,6 +65,8 @@ parser.add_argument('--image_source',type=str,choices=["label","pred_vim_224","p
                     default='label', help='The field name of the image source.')
 parser.add_argument('--image_fusion_mode',type=int, default=0,
                     help='Image fusion mode.options:[0,1,2,3,4,5,6,7]')
+parser.add_argument('--train_aug_fusion_mode',type=int, default=-1,
+                    help='Image fusion mode.options:[-1,0,1,2,3,4,5,6,7]')
 parser.add_argument('--image_need_trans',default=False, 
                     action="store_true", help="The image needs to be transformed")
 parser.add_argument('--image_need_mask',default=False, 
@@ -170,7 +172,7 @@ def train(args, snapshot_path):
     # seg_model.load_state_dict(seg_model_pretrained_dict)   
       
     db_train = BaseDataSets4pretrain(args,image_source= args.image_source,mode = "train", 
-                                     transform=transforms.Compose([RandomGeneratorv3(args)]))
+                                     transform=transforms.Compose([RandomGeneratorv3(args,args.train_aug_fusion_mode)]))
     db_val = BaseDataSets4pretrain(args,image_source= "pred_unet_256_npy",mode = "val",
                                    transform=transforms.Compose([RandomGeneratorv2_1(args.patch_size)]))
 

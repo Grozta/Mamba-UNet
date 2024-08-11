@@ -594,7 +594,7 @@ class RandomGeneratorv2_1(object):
 class RandomGeneratorv3(object):
     """for label train 
     """
-    def __init__(self, args):
+    def __init__(self, args,image_fusion_mode=-1):
         self.output_size = args.patch_size
         self.num_classes = args.num_classes
         
@@ -615,7 +615,10 @@ class RandomGeneratorv3(object):
         self.image_need_mask = args.image_need_mask
         
         self.error_val = args.image_noise
-        self.image_fusion_mode = args.image_fusion_mode
+        if image_fusion_mode == -1:
+            self.image_fusion_mode = args.image_fusion_mode
+        else:
+            self.image_fusion_mode = image_fusion_mode
         self.input_channels = args.input_channels
         
     def gen_mask_param(self):
@@ -706,7 +709,9 @@ class RandomGeneratorv3(object):
             image, label, origin_img = resize_data_list([image, label, origin_img],self.output_size)
             
             if self.image_fusion_mode == 1:
-                image = np.stack([origin_img,image],axis=0)
+                if len(image.shape) ==3:
+                    origin_img = np.expand_dims(origin_img,axis=0)
+                image = np.concatenate([origin_img,image],axis=0)
             if self.image_fusion_mode == 2:
                 image = np.stack([origin_img,label],axis=0)
             if self.image_fusion_mode == 3:

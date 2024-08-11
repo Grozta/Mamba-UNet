@@ -364,12 +364,82 @@ def Inference_seg_model_genarate_new_dataset(args):
     logging.info(f"dsc:{(avg_metric[0]+avg_metric[1]+avg_metric[2])/3}")
     return avg_metric
 
+from dataloaders.dataset import BaseDataSets4pretrain,RandomGeneratorv2_1
+from torchvision import transforms
+from torch.utils.data import DataLoader
+from utils.utils import get_pth_files,extract_iter_number,merge_volume_in_dict
+
+def Inference_Post_processing(args, snapshot_path):
+    writer = args.writer
+    ema_model = net_factory(None, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
+    seg_model = net_factory(None,args,net_type=args.seg_model, in_chns=args.input_channels, class_num=args.num_classes)
+    db_test = BaseDataSets4pretrain(args,image_source= "pred_unet_256_npy",mode = "test",
+                                   transform=transforms.Compose([RandomGeneratorv2_1(args)])) 
+    testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
+
+    pth = args.seg_model_pth
+    iterator = tqdm(range(len(db_test)), ncols=70)
+    model_pretrained_dict = torch.load(args.seg_model_pth)
+    seg_model.load_state_dict(model_pretrained_dict)
+    seg_model.eval()
+    file_pth = os.path.basename(args.mad_model_pth)
+    model_pretrained_dict = torch.load(args.mad_model_pth)
+    ema_model.load_state_dict(model_pretrained_dict)
+    ema_model.eval()
+    
+    metric_list = []
+    res_dict = {}
+    iter_num = 0
+    for i_batch, sampled_batch in enumerate(testloader):
+        test_image, test_label, case_name = sampled_batch['image'], sampled_batch['label'],sampled_batch['case']
+        test_image, test_label = test_image.cuda(), test_label.numpy()
+        test_oringin_img = test_image[:,0,...].unsqueeze(dim=0)
+        outputs = seg_model(test_oringin_img)
+        ema_input = torch.cat((test_oringin_img, outputs), dim=1)
+        outputs = ema_model(ema_input)
+        pred = torch.argmax(torch.softmax(outputs, dim=1),dim=1).detach().cpu().numpy()
+        
+        image_origin  = ema_input[0,...].detach().cpu().numpy()
+        writer.add_image(f'test_{file_pth}/Image_origin', image_origin[0], i_batch, dataformats='HW')
+        writer.add_image(f'test_{file_pth}/seg_pre', label2color(np.argmax(image_origin[1:],axis=0)), i_batch,dataformats='HWC')
+        
+        prediction = pred[0]
+        labs = test_label[0, ...]
+        x,y = labs.shape[-2], labs.shape[-1]
+        zoom_factors = (x / prediction.shape[0], y / prediction.shape[1])
+        prediction = zoom(prediction, zoom_factors, order=0)
+        
+        writer.add_image(f'test_{pth}/Prediction', label2color(prediction), i_batch,dataformats='HWC')
+        writer.add_image(f'test_{pth}/GroundTruth',label2color(labs), i_batch,dataformats='HWC')
+        case_res = np.stack([prediction,labs])
+        volume_name,index = tuple(case_name[0].split('_slice_'))
+        if volume_name in res_dict.keys():
+            res_dict[volume_name][index] = case_res
+        else:
+            res_dict[volume_name]= {index:case_res}
+        iterator.update(1)
+        iter_num = iter_num+1
+        
+    volume_pred_list, volume_label_list = merge_volume_in_dict(res_dict)
+    for prediction,labs in zip(volume_pred_list,volume_label_list):
+        first_metric = calculate_metric_percase(prediction == 1, labs == 1)
+        second_metric = calculate_metric_percase(prediction == 2, labs == 2)
+        third_metric = calculate_metric_percase(prediction == 3, labs == 3)
+        metric_i = np.array([first_metric,second_metric,third_metric])# 3x2
+        metric_list.append(metric_i) 
+    metric_list = np.stack(metric_list)
+    avg_metric = np.nanmean(metric_list,axis=0)
+    performance = np.nanmean(avg_metric,axis=0)
+    logging.info(f'{pth}_metric :{performance}' )
+    return avg_metric
+    #writer.add_text(f'test/performance',f"{pth}:"+str(performance))
+
 if __name__ == '__main__':
     args = parser.parse_args()
     args.config = get_config(args)
     args.test_mad = False
     args.root_path = "/media/grozta/SOYO/DATASET/ACDC"
-    current_mode = "Inference_seg_model_genarate_new_dataset"
+    current_mode = "Inference_Post_processing"
     
     # 测试mad的恢复效果
     if current_mode == "Inference_mad_model":
@@ -415,5 +485,28 @@ if __name__ == '__main__':
         args.pred_save_name_mode = "save_4_npy"
         args.tag = "v3"
         metric = Inference_seg_model_genarate_new_dataset(args)   
-    print(metric)
-    print((metric[0]+metric[1]+metric[2])/3)
+    # 将seg的输出直接给ema，测试该过程的修复效果(这里给ema时需要给image+pre_npy)
+    if current_mode == "Inference_Post_processing":
+        args.exp = "test/Post_processing"
+        args.clean_before_run = True
+        args.patch_size = [256,256]
+        args.seg_model = "unet"
+        args.mad_model = "unet"
+        args.input_channels_mad = 5
+        args.input_channels = 1
+        args.num_workers = 1
+        args.seg_model_pth = "../data/pretrain/seg_model_unet.pth"
+        args.mad_model_pth = "../model/ACDC/MAD_Pretrain/unet_v4.8.2/iter_14245_dice_0.8998.pth"
+        args.tag = "v1"
+        snapshot_path = "../model/{}_{}".format(args.exp, args.tag)
+        if args.clean_before_run and os.path.exists(snapshot_path):
+            shutil.rmtree(snapshot_path)
+        if not os.path.exists(snapshot_path):
+            os.makedirs(snapshot_path)
+        shutil.copytree('.', snapshot_path + '/code',
+                ignore=shutil.ignore_patterns('.git', '__pycache__','pretrained_ckpt'))
+        args.writer = SummaryWriter(snapshot_path + '/log')
+        metric = Inference_Post_processing(args,snapshot_path)
+    if current_mode not in ["Inference_Post_processing"]:
+        print(metric)
+        print((metric[0]+metric[1]+metric[2])/3)

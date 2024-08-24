@@ -114,7 +114,7 @@ def train(args, snapshot_path):
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
     max_epoch = args.max_iterations // len(trainloader) + 1
-    iterator = tqdm(total=len(max_epoch), desc=f'Epoch {start_epoch}',  leave=False, ncols=120,initial=start_epoch)
+    iterator = tqdm(total=max_epoch, desc=f'Epoch {start_epoch}',  leave=False, ncols=120,initial=start_epoch)
     for epoch_num in range(start_epoch, max_epoch):
         for i_batch, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
@@ -125,9 +125,12 @@ def train(args, snapshot_path):
             
             if args.train_struct_mode == 0:
                 mask_label_batch = mask_label_batch.cuda()
-                mask_input = seg_outputs_soft.detach()
-                blend_outputs = (mask_input+mask_label_batch)/2
-                blend_input = torch.softmax(blend_outputs, dim=1)
+                if not args.ema_only_masked_label:
+                    mask_input = seg_outputs_soft.detach()
+                    blend_outputs = (mask_input+mask_label_batch)/2
+                    blend_input = torch.softmax(blend_outputs, dim=1)
+                else:
+                    blend_input = mask_label_batch
                 if args.update_log_mode == 1:
                     blend_input = torch.concat([volume_batch,blend_input],dim=1)
                 mad_outputs = mad_model(blend_input)

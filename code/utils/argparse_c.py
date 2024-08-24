@@ -23,7 +23,7 @@ parser.add_argument('--update_log_mode',type=int, default=0,
                     help='The structure of Improvement log')
 parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5],
                     help='Image fusion mode.')
-parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_224"],
+parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_224","pred_unet_256_npy"],
                     default='pred_vim_224', help='The field name of the image source from dataset sample') #labeled_num
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')

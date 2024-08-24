@@ -341,6 +341,7 @@
                 "--pretrain_path_mad","../model/ACDC/MAD_Pretrain/unet_v4.8.2/unet_best_model.pth",
                 "--train_struct_mode","2",
                 "--update_log_mode","1",
+                "--ablation_option","1","2","3",
                 "--test_iterations","660",
                 "--train_test_mode","1",
                 "--clean_before_run"

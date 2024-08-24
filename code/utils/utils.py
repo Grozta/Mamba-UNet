@@ -146,6 +146,14 @@ def get_train_test_mode(mode):
                 }
     return ref_dict[str(mode)]
 
+def get_ablation_option_mode(mode):
+    ref_dict = {"0": "不做消融实验,完整的结构二", 
+                "1": "移除seg_model之后的loss", 
+                "2": "移除mad模型的预训练",
+                "3": "移除mad加载原图",
+                }
+    return ref_dict[str(mode)]
+
 def improvement_log(struct_mode,log_mode):
     ref_struct1_dict = {
         "0": "原始的设计",
@@ -156,7 +164,7 @@ def improvement_log(struct_mode,log_mode):
         "1": "通道上concat image",
         "2": "only_Testing"}
     ref_struct3_dict = {
-        "0": "给原始的设计上去掉mad之后，ema加载的是v4.2的预训练",
+        "0": "给原始的设计上去掉mad之后,ema加载的是v4.2的预训练",
         "1": "",
         "2": "only_Testing"}
     ref_dict = {get_model_struct_mode(0): ref_struct1_dict, 

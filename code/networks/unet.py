@@ -18,6 +18,12 @@ def kaiming_normal_init_weight(model):
             m.bias.data.zero_()
     return model
 
+def kaiming_initialize_weights(m):
+    if isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+
 def sparse_init_weight(model):
     for m in model.modules():
         if isinstance(m, nn.Conv3d):

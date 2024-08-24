@@ -22,9 +22,10 @@ from tqdm import tqdm
 from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
+from networks.unet import kaiming_initialize_weights
 from utils import losses
 from utils.utils import label2color, get_model_struct_mode, extract_iter_number, get_pth_files\
-    ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA
+    ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode
 from val_2D import test_single_volume_for_trainLabel
 from utils.argparse_c import parser
 
@@ -50,7 +51,7 @@ def test_fine_tune(args, snapshot_path):
         metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
             metric_i = test_single_volume_for_trainLabel(
-                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,update_mode=args.update_log_mode)
+                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,ablation_mode=args.ablation_option)
             metric_list += np.array(metric_i)
         metric_list = metric_list / len(db_test)
 
@@ -70,7 +71,8 @@ def train(args, snapshot_path):
     writer = args.writer
     args.train_loss_MA = None
     logging.info("Current model struction is : {},".format(get_model_struct_mode(args.train_struct_mode)))
-    logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
+    #logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
+    logging.info("Current ablation_option is : {},".format(["["+get_ablation_option_mode(desc)+"]" for desc in args.ablation_option]))
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
         RandomGeneratorv_4_finetune(args,mode="train")
     ]))
@@ -79,12 +81,17 @@ def train(args, snapshot_path):
                              num_workers=args.num_workers, pin_memory=True,worker_init_fn=worker_init_fn)
     valloader = DataLoader(db_val, batch_size=1,pin_memory=True, shuffle=True,num_workers =1)
     
+    if 3 in args.ablation_option:
+        args.input_channels_mad = 4
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
     ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
     seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
     seg_model.load_state_dict(seg_model_pretrained_dict)
-    mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
-    ema_model.load_state_dict(mad_model_pretrained_dict)
+    if 2 in args.ablation_option:
+        ema_model.apply(kaiming_initialize_weights)
+    else:
+        mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
+        ema_model.load_state_dict(mad_model_pretrained_dict)
     
     optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)
@@ -122,7 +129,10 @@ def train(args, snapshot_path):
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
             if args.update_log_mode == 1:
-                seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
+                if 3 not in args.ablation_option:  
+                    seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
+                else:
+                    seg_outputs_soft_blend = seg_outputs_soft
                 ema_outputs = ema_model(seg_outputs_soft_blend)
             elif args.update_log_mode == 2:
                 blend_label = torch.softmax((seg_outputs_soft + mask_label_batch)/2,dim=1)
@@ -141,7 +151,10 @@ def train(args, snapshot_path):
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
-            loss = seg_loss + ema_loss
+            if 1 in args.ablation_option:
+                loss = ema_loss
+            else:
+                loss = seg_loss + ema_loss
             train_losses_epoch.append(loss.cpu().item())
             optimizer_seg.zero_grad()
             optimizer_ema.zero_grad()
@@ -186,7 +199,7 @@ def train(args, snapshot_path):
                 metric_i = test_single_volume_for_trainLabel(
                     sampled_batch["image"], sampled_batch["label"], seg_model, 
                     ema_model,classes=args.num_classes, patch_size=args.patch_size,
-                    update_mode=args.update_log_mode)
+                    ablation_mode=args.ablation_option)
                 metric_list += np.array(metric_i)
             metric_list = metric_list / len(db_val)
 

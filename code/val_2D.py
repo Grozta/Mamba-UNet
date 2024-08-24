@@ -77,7 +77,7 @@ def test_single_volume_for_mad_model(image, label, net, classes, transforms, pat
             prediction == i, label == i))
     return metric_list
 
-def test_single_volume_for_trainLabel(image, label, net, ema_net, classes, patch_size=[256, 256],update_mode = 0):
+def test_single_volume_for_trainLabel(image, label, net, ema_net, classes, patch_size=[256, 256],ablation_mode = [0]):
     image, label = image.squeeze(0).cpu().detach(
     ).numpy(), label.squeeze(0).cpu().detach().numpy()
     prediction = np.zeros_like(label)
@@ -91,7 +91,7 @@ def test_single_volume_for_trainLabel(image, label, net, ema_net, classes, patch
         ema_net.eval()
         with torch.no_grad():
             out = torch.softmax(net(input), dim=1)
-            if update_mode in [1,2]:
+            if 3 not in ablation_mode:
                 out = torch.cat([input,out],dim=1)
             out = torch.argmax(torch.softmax(ema_net(out), dim=1), dim=1).squeeze(0)
             

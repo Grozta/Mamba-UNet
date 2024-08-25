@@ -49,7 +49,7 @@ def test_fine_tune(args, snapshot_path):
         metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
             metric_i = test_single_volume_for_trainLabel(
-                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,update_mode=args.update_log_mode)
+                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size)
             metric_list += np.array(metric_i)
         metric_list = metric_list / len(db_test)
 
@@ -69,7 +69,6 @@ def train(args, snapshot_path):
     writer = args.writer
     args.train_loss_MA = None
     logging.info("Current model struction is : {},".format(get_model_struct_mode(args.train_struct_mode)))
-    logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
         RandomGeneratorv_4_finetune(args,mode="train")
     ]))
@@ -101,9 +100,24 @@ def train(args, snapshot_path):
         best_performance = 0.0
         start_epoch = 0
         
-    optimizer_seg = optim.SGD(seg_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
-    optimizer_ema = optim.SGD(ema_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
-    optimizer_mad = optim.SGD(mad_model.parameters(), lr=args.initial_lr,momentum=0.9, weight_decay=0.0001)
+    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
+    optimizer_mad = torch.optim.Adam(mad_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_mad = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
+    optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+                                          amsgrad=True)
+    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
+                                                        patience=args.lr_scheduler_patience,
+                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        threshold_mode="abs")
     
     seg_model.train()
     ema_model.train()
@@ -118,50 +132,37 @@ def train(args, snapshot_path):
     for epoch_num in range(start_epoch, max_epoch):
         for i_batch, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
-            volume_batch, label_batch = volume_batch.cuda(), label_batch.cuda()
+            volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(),mask_label_batch.cuda()
             
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            if args.train_struct_mode == 0:
-                mask_label_batch = mask_label_batch.cuda()
-                if not args.ema_only_masked_label:
-                    mask_input = seg_outputs_soft.detach()
-                    blend_outputs = (mask_input+mask_label_batch)/2
-                    blend_input = torch.softmax(blend_outputs, dim=1)
-                else:
-                    blend_input = mask_label_batch
-                if args.update_log_mode == 1:
-                    blend_input = torch.concat([volume_batch,blend_input],dim=1)
-                mad_outputs = mad_model(blend_input)
-                mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
-            if args.update_log_mode == 2:
-                seg_outputs_soft = seg_outputs_soft.detach()
-            if args.update_log_mode in [1,2]:
-                seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
-            ema_outputs = ema_model(seg_outputs_soft_blend)
+            seg_soft4mad = seg_outputs_soft.detach()
+            blend_outputs = (seg_soft4mad+mask_label_batch)/2
+            blend_input4_mad = torch.softmax(blend_outputs, dim=1)
+            blend_input4_mad = torch.concat([volume_batch,blend_input4_mad],dim=1)
+            mad_outputs = mad_model(blend_input4_mad)
+            mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
+            
+            soft_input4ema = torch.concat([volume_batch,seg_outputs_soft],dim=1)
+            ema_outputs = ema_model(soft_input4ema)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
-            if args.train_struct_mode in [0,1]:
-                seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
-                seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
-                seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
-                
-                mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
-                mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
-                mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
-            if args.train_struct_mode in [0,2]:
-                ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
-                ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
-                ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
-            if args.train_struct_mode == 0:
-                loss = seg_loss + mad_loss + ema_loss
-            elif args.train_struct_mode == 1:
-                loss = seg_loss + mad_loss
-            else:
-                loss = ema_loss
+            seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
+            seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
+            seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
             
+            mad_loss_ce = ce_loss(mad_outputs, label_batch[:].long())
+            mad_loss_dice = dice_loss(mad_outputs_soft, label_batch.unsqueeze(1))
+            mad_loss = 0.5 * (mad_loss_dice + mad_loss_ce)
+            
+            ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
+            ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
+            ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
+            
+            loss = seg_loss + mad_loss + ema_loss
+
             optimizer_seg.zero_grad()
             optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
@@ -171,35 +172,27 @@ def train(args, snapshot_path):
             optimizer_ema.step()
             
             iter_num = iter_num + 1
-            lr_ = args.initial_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
-            for param_group_seg,param_group_mad,param_group_ema, in zip(optimizer_seg.param_groups,optimizer_mad.param_groups,optimizer_ema.param_groups):
-                param_group_seg['lr'] = lr_
-                param_group_mad['lr'] = lr_
-                param_group_ema['lr'] = lr_
-            #writer.add_scalar('info/lr', lr_, epoch_num)
             
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
             writer.add_scalar('info/total_loss', loss, iter_num)
-            if args.train_struct_mode in [0,1]:
-                writer.add_scalar('info/seg_loss', seg_loss, iter_num)
-                writer.add_scalar('info/mad_loss', mad_loss, iter_num)
-            if args.train_struct_mode in [0,2]:
-                writer.add_scalar('info/ema_loss', ema_loss, iter_num)
+            writer.add_scalar('info/seg_loss', seg_loss, iter_num)
+            writer.add_scalar('info/mad_loss', mad_loss, iter_num)
+            writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
             logging.info('iteration %d : loss : %f' % (iter_num, loss.item()))
 
-            if iter_num % 20 == 0:
+            if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]
                 writer.add_image('train/Image', image, iter_num, dataformats='HW')
                 
                 labs = sampled_batch['label'][0, ...]
                 writer.add_image('train/GroundTruth', 
                                  label2color(labs), iter_num,dataformats='HWC')
-                if args.train_struct_mode in [0,1]:
-                    mask_labs = torch.argmax(sampled_batch['mask_label'], dim=1)[0, ...]
-                    writer.add_image('train/mask_lable', 
-                                    label2color(mask_labs), iter_num,dataformats='HWC')
+                
+                mask_labs = torch.argmax(sampled_batch['mask_label'], dim=1)[0, ...]
+                writer.add_image('train/mask_lable', 
+                                label2color(mask_labs), iter_num,dataformats='HWC')
                 
                 seg_outputs = torch.argmax(seg_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/segPrediction',
@@ -208,17 +201,16 @@ def train(args, snapshot_path):
                 ema_outputs = torch.argmax(ema_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emaPrediction',
                                  label2color(ema_outputs), iter_num,dataformats='HWC')
-                if args.train_struct_mode in [0,1]:
-                    mad_outputs = torch.argmax(mad_outputs_soft, dim=1).cpu().numpy()[0, ...]
-                    writer.add_image('train/madPrediction',
-                                    label2color(mad_outputs), iter_num,dataformats='HWC')
+                
+                mad_outputs = torch.argmax(mad_outputs_soft, dim=1).cpu().numpy()[0, ...]
+                writer.add_image('train/madPrediction',
+                                label2color(mad_outputs), iter_num,dataformats='HWC')
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "ema_state_dict":ema_model.state_dict(),
                            "mad_state_dict":mad_model.state_dict(),
                            "iter_num": iter_num,
-                           "best_performance":best_performance}
-            
-                   
+                           "best_performance":best_performance}  
+              
             if iter_num % (len(trainloader)*1) == 0:
                 seg_model.eval()
                 ema_model.eval()
@@ -226,8 +218,7 @@ def train(args, snapshot_path):
                 for i_batch, sampled_batch in enumerate(valloader):
                     metric_i = test_single_volume_for_trainLabel(
                         sampled_batch["image"], sampled_batch["label"], seg_model, 
-                        ema_model,classes=args.num_classes, patch_size=args.patch_size,
-                        update_mode=args.update_log_mode)
+                        ema_model,classes=args.num_classes, patch_size=args.patch_size)
                     metric_list += np.array(metric_i)
                 metric_list = metric_list / len(db_val)
 
@@ -263,6 +254,7 @@ def train(args, snapshot_path):
                         logging.info("save_best_iter_model to {}".format(save_mode_path))
 
                 seg_model.train()
+                mad_model.train()
                 ema_model.train()
                 
         

@@ -85,8 +85,11 @@ def train(args, snapshot_path):
         args.input_channels_mad = 4
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
     ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
-    seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
-    seg_model.load_state_dict(seg_model_pretrained_dict)
+    if 4 in args.ablation_option:
+        seg_model.apply(kaiming_initialize_weights)
+    else:
+        seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+        seg_model.load_state_dict(seg_model_pretrained_dict)
     if 2 in args.ablation_option:
         ema_model.apply(kaiming_initialize_weights)
     else:

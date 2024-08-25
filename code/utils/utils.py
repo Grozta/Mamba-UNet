@@ -151,6 +151,7 @@ def get_ablation_option_mode(mode):
                 "1": "移除seg_model之后的loss", 
                 "2": "移除mad模型的预训练",
                 "3": "移除mad加载原图",
+                "4": "移除seg模型的预训练",
                 }
     return ref_dict[str(mode)]
 

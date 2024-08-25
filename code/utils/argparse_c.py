@@ -19,7 +19,7 @@ parser.add_argument('--pretrain_path_mad', type=str,
                     default='../data/pretrain/mad_model_unet.pth', help='pretrain mad_model path')
 parser.add_argument('--train_struct_mode',type=int, default=0,choices=[0,1,2],
                     help='The structure of training.')
-parser.add_argument('--ablation_option',type=int, nargs='+', default=[0],choices=[0,1,2,3],
+parser.add_argument('--ablation_option',type=int, nargs='+', default=[0],choices=[0,1,2,3,4],
                     help='The Ablation experiments')
 parser.add_argument('--update_log_mode',type=int, default=0,
                     help='The structure of Improvement log')

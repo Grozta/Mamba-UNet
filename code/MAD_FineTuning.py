@@ -130,6 +130,7 @@ def train(args, snapshot_path):
     max_epoch = args.max_iterations // len(trainloader) + 1
     iterator = tqdm(total=max_epoch, desc=f'Epoch {start_epoch}',  leave=False, ncols=120,initial=start_epoch)
     for epoch_num in range(start_epoch, max_epoch):
+        train_losses_epoch = []
         for i_batch, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(),mask_label_batch.cuda()
@@ -162,7 +163,7 @@ def train(args, snapshot_path):
             ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
             
             loss = seg_loss + mad_loss + ema_loss
-
+            train_losses_epoch.append(loss.cpu().item())
             optimizer_seg.zero_grad()
             optimizer_mad.zero_grad()
             optimizer_ema.zero_grad()
@@ -172,7 +173,6 @@ def train(args, snapshot_path):
             optimizer_ema.step()
             
             iter_num = iter_num + 1
-            
             update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
             writer.add_scalar('info/total_loss', loss, iter_num)
@@ -209,53 +209,53 @@ def train(args, snapshot_path):
                            "ema_state_dict":ema_model.state_dict(),
                            "mad_state_dict":mad_model.state_dict(),
                            "iter_num": iter_num,
-                           "best_performance":best_performance}  
+                           "best_performance":best_performance}
               
-            if iter_num % (len(trainloader)*1) == 0:
-                seg_model.eval()
-                ema_model.eval()
-                metric_list = 0.0 # 3x2
-                for i_batch, sampled_batch in enumerate(valloader):
-                    metric_i = test_single_volume_for_trainLabel(
-                        sampled_batch["image"], sampled_batch["label"], seg_model, 
-                        ema_model,classes=args.num_classes, patch_size=args.patch_size)
-                    metric_list += np.array(metric_i)
-                metric_list = metric_list / len(db_val)
+        epoch_num = epoch_num + 1      
+        if epoch_num % 1 == 0:
+            seg_model.eval()
+            ema_model.eval()
+            metric_list = 0.0 # 3x2
+            for i_batch, sampled_batch in enumerate(valloader):
+                metric_i = test_single_volume_for_trainLabel(
+                    sampled_batch["image"], sampled_batch["label"], seg_model, 
+                    ema_model,classes=args.num_classes, patch_size=args.patch_size)
+                metric_list += np.array(metric_i)
+            metric_list = metric_list / len(db_val)
 
-                performance = np.mean(metric_list, axis=0)
-                logging.info(f'iteration: {iter_num} performance_list :\n {metric_list}')
-                logging.info(f'iteration: {iter_num} performance_mean :\n {performance}')
-                writer.add_scalars('info/val_dice',{"1":metric_list[0][0],
-                                                    "2":metric_list[1][0],
-                                                    "3":metric_list[2][0],
-                                                    "avg_dice":performance[0]}, iter_num)
-                writer.add_scalars('info/val_hd95',{"1":metric_list[0][1],
-                                                    "2":metric_list[1][1],
-                                                    "3":metric_list[2][1],
-                                                    "avg_hd95":performance[1]}, iter_num)
+            performance = np.mean(metric_list, axis=0)
+            logging.info(f'iteration: {iter_num} performance_list :\n {metric_list}')
+            logging.info(f'iteration: {iter_num} performance_mean :\n {performance}')
+            writer.add_scalars('info/val_dice',{"1":metric_list[0][0],
+                                                "2":metric_list[1][0],
+                                                "3":metric_list[2][0],
+                                                "avg_dice":performance[0]}, iter_num)
+            writer.add_scalars('info/val_hd95',{"1":metric_list[0][1],
+                                                "2":metric_list[1][1],
+                                                "3":metric_list[2][1],
+                                                "avg_hd95":performance[1]}, iter_num)
+            
+            torch.save(model_state, latest_check_point_path)
+            logging.info("save latest_check_point {}".format(latest_check_point_path))
+            
+            if performance[0] > best_performance:
+                best_performance = performance[0]
+                model_state["performance"] = best_performance
+                writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
+                save_best = os.path.join(snapshot_path,
+                                            'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
+                torch.save(model_state, save_best)
+                logging.info("save_best_model to {}".format(save_best))
                 
-                torch.save(model_state, latest_check_point_path)
-                logging.info("save latest_check_point {}".format(latest_check_point_path))
-                
-                if performance[0] > best_performance:
-                    best_performance = performance[0]
-                    model_state["performance"] = best_performance
-                    writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
-                    save_best = os.path.join(snapshot_path,
-                                                'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
-                    torch.save(model_state, save_best)
-                    logging.info("save_best_model to {}".format(save_best))
-                    
-                    if iter_num >len(trainloader)*80:
-                        save_mode_path = os.path.join(snapshot_path,
-                                                    'iter_{}_dice_{}.pth'.format(
-                                                        iter_num, round(best_performance, 4)))
-                        torch.save(model_state, save_mode_path)
-                        logging.info("save_best_iter_model to {}".format(save_mode_path))
+                if iter_num >len(trainloader)*80:
+                    save_mode_path = os.path.join(snapshot_path,
+                                                'iter_{}_dice_{}.pth'.format(
+                                                    iter_num, round(best_performance, 4)))
+                    torch.save(model_state, save_mode_path)
+                    logging.info("save_best_iter_model to {}".format(save_mode_path))
 
-                seg_model.train()
-                mad_model.train()
-                ema_model.train()
+            seg_model.train()
+            ema_model.train()
                 
         
         if iter_num % (len(trainloader)*40) == 0:
@@ -264,6 +264,10 @@ def train(args, snapshot_path):
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
         
+        args.all_tr_losses.append(np.mean(train_losses_epoch))
+        update_train_loss_MA(args)
+        lr_scheduler_seg.step(args.train_loss_MA)
+        lr_scheduler_ema.step(args.train_loss_MA)
         writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
@@ -272,7 +276,7 @@ def train(args, snapshot_path):
         if iter_num >= args.max_iterations or optimizer_seg.state_dict()['param_groups'][0]['lr'] <= args.lr_threshold:
             iterator.close()
             break
-        iterator.update(1) 
+         
     return "Training Finished!"
 
 

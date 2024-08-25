@@ -22,6 +22,7 @@ from tqdm import tqdm
 from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
+from networks.unet import kaiming_initialize_weights
 from utils import losses
 from utils.utils import label2color, get_model_struct_mode, update_ema_variables, get_pth_files, update_train_loss_MA, get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,extract_iter_number
 from utils.argparse_c import parser
@@ -94,7 +95,7 @@ def train(args, snapshot_path):
         seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
         mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
         seg_model.load_state_dict(seg_model_pretrained_dict)
-        ema_model.load_state_dict(mad_model_pretrained_dict)
+        ema_model.apply(kaiming_initialize_weights)
         mad_model.load_state_dict(mad_model_pretrained_dict)
         iter_num = 0
         best_performance = 0.0
@@ -104,19 +105,19 @@ def train(args, snapshot_path):
                                           amsgrad=True)
     lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        verbose=True, threshold=args.lr_threshold,
                                                         threshold_mode="abs")
-    optimizer_mad = torch.optim.Adam(mad_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+    optimizer_mad = torch.optim.Adam(mad_model.parameters(), args.initial_lr*0.001, weight_decay=args.weight_decay,
                                           amsgrad=True)
-    lr_scheduler_mad = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
+    lr_scheduler_mad = lr_scheduler.ReduceLROnPlateau(optimizer_mad, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        verbose=True, threshold=args.lr_threshold,
                                                         threshold_mode="abs")
     optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)
     lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
+                                                        verbose=True, threshold=args.lr_threshold,
                                                         threshold_mode="abs")
     
     seg_model.train()
@@ -127,6 +128,7 @@ def train(args, snapshot_path):
     dice_loss = losses.DiceLoss(args.num_classes)
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
+    args.all_tr_losses = []
     max_epoch = args.max_iterations // len(trainloader) + 1
     iterator = tqdm(total=max_epoch, desc=f'Epoch {start_epoch}',  leave=False, ncols=120,initial=start_epoch)
     for epoch_num in range(start_epoch, max_epoch):
@@ -135,18 +137,20 @@ def train(args, snapshot_path):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(),mask_label_batch.cuda()
             
+            update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
+            
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            seg_soft4mad = seg_outputs_soft.detach()
-            blend_outputs = (seg_soft4mad+mask_label_batch)/2
-            blend_input4_mad = torch.softmax(blend_outputs, dim=1)
-            blend_input4_mad = torch.concat([volume_batch,blend_input4_mad],dim=1)
-            mad_outputs = mad_model(blend_input4_mad)
+            seg_soft2mad = seg_outputs_soft.detach()
+            blend_outputs = (seg_soft2mad+mask_label_batch)/2
+            blend_input2mad = torch.softmax(blend_outputs, dim=1)
+            blend_input2mad = torch.concat([volume_batch,blend_input2mad],dim=1)
+            mad_outputs = mad_model(blend_input2mad)
             mad_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            soft_input4ema = torch.concat([volume_batch,seg_outputs_soft],dim=1)
-            ema_outputs = ema_model(soft_input4ema)
+            soft_input2ema = torch.concat([volume_batch,seg_outputs_soft],dim=1)
+            ema_outputs = ema_model(soft_input2ema)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
@@ -173,14 +177,13 @@ def train(args, snapshot_path):
             optimizer_ema.step()
             
             iter_num = iter_num + 1
-            update_ema_variables(mad_model, ema_model, args.ema_decay, iter_num)
             
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
             writer.add_scalar('info/mad_loss', mad_loss, iter_num)
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
 
-            logging.info('iteration %d : loss : %f' % (iter_num, loss.item()))
+            logging.info('iteration %d : loss : %f seg_loss : %f mad_loss : %f ema_loss : %f' % (iter_num, loss.item(), seg_loss.item(), mad_loss.item(), ema_loss.item()))
 
             if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]
@@ -270,6 +273,10 @@ def train(args, snapshot_path):
         lr_scheduler_ema.step(args.train_loss_MA)
         lr_scheduler_mad.step(args.train_loss_MA)
         writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
+        writer.add_scalars('info/lr_scheduler',{"lr": optimizer_seg.state_dict()['param_groups'][0]['lr'],
+                                                "loss_MA": args.train_loss_MA,
+                                                "3":metric_list[2][1],
+                                                "avg_hd95":performance[1]}, iter_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()

@@ -341,9 +341,7 @@
                 "--seg_model","unet",
                 "--pretrain_path_seg","../data/pretrain/seg_model_unet.pth",
                 "--pretrain_path_mad","../model/ACDC/MAD_Pretrain/unet_v4.11/unet_best_model.pth",
-                "--ema_only_masked_label",
                 "--train_struct_mode","0",
-                "--update_log_mode","1",
                 "--test_iterations","660",
                 "--train_test_mode","1",
                 "--clean_before_run"

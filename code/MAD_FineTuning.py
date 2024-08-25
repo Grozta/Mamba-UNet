@@ -268,6 +268,7 @@ def train(args, snapshot_path):
         update_train_loss_MA(args)
         lr_scheduler_seg.step(args.train_loss_MA)
         lr_scheduler_ema.step(args.train_loss_MA)
+        lr_scheduler_mad.step(args.train_loss_MA)
         writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:

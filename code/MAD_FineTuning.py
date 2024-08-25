@@ -173,7 +173,7 @@ def train(args, snapshot_path):
                 'iteration %d : loss : %f, seg_loss: %f,  ema_loss: %f' %
                 (iter_num, loss.item(), seg_loss.item(), ema_loss.item()))
 
-            if iter_num % 20 == 0:
+            if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]
                 writer.add_image('train/Image', image, iter_num, dataformats='HW')
                 

@@ -266,7 +266,7 @@ def train(args, snapshot_path):
                 snapshot_path, 'iter_' + str(iter_num) + '.pth')
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
-        
+        iterator.update(1)
         args.all_tr_losses.append(np.mean(train_losses_epoch))
         update_train_loss_MA(args)
         lr_scheduler_seg.step(args.train_loss_MA)

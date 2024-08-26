@@ -94,7 +94,11 @@ def train(args, snapshot_path):
         ema_model.apply(kaiming_initialize_weights)
     else:
         mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
-        ema_model.load_state_dict(mad_model_pretrained_dict)
+        ema_model.load_state_dict(mad_model_pretrained_dict)   
+    if 5 in args.ablation_option:
+        args.max_iterations = 10000
+        for param in seg_model.parameters():
+            param.requires_grad = False
     
     optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
                                           amsgrad=True)

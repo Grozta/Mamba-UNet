@@ -152,6 +152,7 @@ def get_ablation_option_mode(mode):
                 "2": "移除mad模型的预训练",
                 "3": "移除mad加载原图",
                 "4": "移除seg模型的预训练",
+                "5": "冻结seg模型的参数",
                 }
     return ref_dict[str(mode)]
 

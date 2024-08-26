@@ -96,7 +96,6 @@ def train(args, snapshot_path):
         mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
         ema_model.load_state_dict(mad_model_pretrained_dict)   
     if 5 in args.ablation_option:
-        args.max_iterations = 10000
         for param in seg_model.parameters():
             param.requires_grad = False
     

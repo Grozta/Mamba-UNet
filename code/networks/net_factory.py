@@ -1,6 +1,7 @@
 from networks.efficientunet import Effi_UNet
 from networks.enet import ENet
 from networks.pnet import PNet2D
+from networks.VAE import VAE_2D
 from networks.unet import UNet, UNet_DS, UNet_URPC, UNet_CCT, TLUNet
 from networks.magicnet_2D import VNet_2D
 import argparse
@@ -13,6 +14,8 @@ from networks.projector import projectors, classifier, Jigsaw_classifier
 def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
     if net_type == "unet":
         net = UNet(in_chns=in_chns, class_num=class_num).cuda()
+    if net_type == "vae_2d":
+        net = VAE_2D(n_channels=in_chns, n_class=class_num).cuda()
     elif net_type == "TLunet":
         net = TLUNet(in_chns=in_chns, class_num=class_num).cuda()
     elif net_type == "vnet":

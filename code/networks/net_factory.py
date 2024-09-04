@@ -14,8 +14,8 @@ from networks.projector import projectors, classifier, Jigsaw_classifier
 def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filters= 16):
     if net_type == "unet":
         net = UNet(in_chns=in_chns, class_num=class_num).cuda()
-    if net_type == "vae_2d":
-        net = VAE_2D(n_channels=in_chns, n_class=class_num).cuda()
+    elif net_type == "vae_2d":
+        net = VAE_2D(n_channels=in_chns, n_class=class_num,norm_type=1,dim=128).cuda()
     elif net_type == "TLunet":
         net = TLUNet(in_chns=in_chns, class_num=class_num).cuda()
     elif net_type == "vnet":

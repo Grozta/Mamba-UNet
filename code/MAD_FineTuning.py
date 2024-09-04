@@ -25,14 +25,14 @@ from networks.net_factory import net_factory
 from networks.unet import kaiming_initialize_weights
 from utils import losses
 from utils.utils import label2color, get_model_struct_mode, extract_iter_number, get_pth_files\
-    ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode
+    ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode,get_VAE_option_mode
 from val_2D import test_single_volume_for_trainLabel
 from utils.argparse_c import parser
 
 def test_fine_tune(args, snapshot_path):
     writer = args.writer
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
-    ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
+    ema_model = net_factory(args.config, args, net_type=args.ema_model, in_chns=args.input_channels_ema, class_num=args.num_classes)
     
     db_test = BaseDataSets(base_dir=args.root_path, split="test") 
     testloader = DataLoader(db_test, batch_size=1, shuffle=True,pin_memory=True,num_workers =args.num_workers)
@@ -51,7 +51,7 @@ def test_fine_tune(args, snapshot_path):
         metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
             metric_i = test_single_volume_for_trainLabel(
-                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,ablation_mode=args.ablation_option)
+                sampled_batch["image"], sampled_batch["label"], seg_model, ema_model,classes=args.num_classes, patch_size=args.patch_size,args=args)
             metric_list += np.array(metric_i)
         metric_list = metric_list / len(db_test)
 
@@ -71,8 +71,9 @@ def train(args, snapshot_path):
     writer = args.writer
     args.train_loss_MA = None
     logging.info("Current model struction is : {},".format(get_model_struct_mode(args.train_struct_mode)))
-    #logging.info("Current update log is : {}".format(improvement_log(get_model_struct_mode(args.train_struct_mode),args.update_log_mode)))
     logging.info("Current ablation_option is : {},".format(["["+get_ablation_option_mode(desc)+"]" for desc in args.ablation_option]))
+    logging.info("Current VAE_option is : {},".format(["["+get_VAE_option_mode(desc)+"]" for desc in args.vae_option]))
+    
     db_train = BaseDataSets4TrainLabel(args, mode="train", transform=transforms.Compose([
         RandomGeneratorv_4_finetune(args,mode="train")
     ]))
@@ -82,9 +83,9 @@ def train(args, snapshot_path):
     valloader = DataLoader(db_val, batch_size=1,pin_memory=True, shuffle=True,num_workers =1)
     
     if 3 in args.ablation_option:
-        args.input_channels_mad = 4
+        args.input_channels_ema = 4
     seg_model = net_factory(args.config, args, net_type=args.seg_model, in_chns=1, class_num=args.num_classes)
-    ema_model = net_factory(args.config, args, net_type=args.mad_model, in_chns=args.input_channels_mad, class_num=args.num_classes)
+    ema_model = net_factory(args.config, args, net_type=args.ema_model, in_chns=args.input_channels_ema, class_num=args.num_classes)
     if 4 in args.ablation_option:
         seg_model.apply(kaiming_initialize_weights)
     else:
@@ -93,8 +94,8 @@ def train(args, snapshot_path):
     if 2 in args.ablation_option:
         ema_model.apply(kaiming_initialize_weights)
     else:
-        mad_model_pretrained_dict = torch.load(args.pretrain_path_mad)
-        ema_model.load_state_dict(mad_model_pretrained_dict)   
+        ema_model_pretrained_dict = torch.load(args.pretrain_path_ema)
+        ema_model.load_state_dict(ema_model_pretrained_dict)
     if 5 in args.ablation_option:
         for param in seg_model.parameters():
             param.requires_grad = False
@@ -134,47 +135,55 @@ def train(args, snapshot_path):
             seg_outputs = seg_model(volume_batch)
             seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
             
-            if args.update_log_mode == 1:
-                if 3 not in args.ablation_option:  
-                    seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
-                else:
-                    seg_outputs_soft_blend = seg_outputs_soft
-                ema_outputs = ema_model(seg_outputs_soft_blend)
-            elif args.update_log_mode == 2:
-                blend_label = torch.softmax((seg_outputs_soft + mask_label_batch)/2,dim=1)
-                seg_outputs_soft_blend = torch.concat([volume_batch,blend_label],dim=1)
-                ema_outputs = ema_model(seg_outputs_soft_blend)
+            if 3 not in args.ablation_option:
+                seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
             else:
-                ema_outputs = ema_model(seg_outputs_soft)
+                seg_outputs_soft_blend = seg_outputs_soft
+            
+            if 1 in args.vae_option:
+                ema_outputs, output_maen,output_std = ema_model(seg_outputs_soft_blend,if_random=True,scale=0.35)
+            else:
+                ema_outputs = ema_model(seg_outputs_soft_blend)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
             
             #------------------------loss------------------------------
+            loss = 0.0
             seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
             seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
             seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
             
+            if 1 in args.vae_option:
+                kl_loss = losses.KLloss(output_maen,output_std)
+                loss = loss + args.kl_loss_factor * kl_loss
+            
             ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
             ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
-            ema_loss = 0.5 * (ema_loss_dice + ema_loss_ce)
+            ema_loss = 0.0
+            if 2 in args.vae_option:
+                ema_loss = ema_loss + ema_loss_dice
+            if 3 in args.vae_option:
+                ema_loss = ema_loss + ema_loss_ce
             
             if 1 in args.ablation_option:
-                loss = ema_loss
+                loss = loss + ema_loss
             else:
-                loss = seg_loss + ema_loss
-            train_losses_epoch.append(loss.cpu().item())
+                loss = ema_loss + loss + seg_loss
+            
             optimizer_seg.zero_grad()
             optimizer_ema.zero_grad()
             loss.backward()
             optimizer_seg.step()
             optimizer_ema.step()
+            train_losses_epoch.append(loss.cpu().item())
 
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
+            writer.add_scalar('info/kl_loss', kl_loss, iter_num)
 
             logging.info(
-                'iteration %d : loss : %f, seg_loss: %f,  ema_loss: %f' %
-                (iter_num, loss.item(), seg_loss.item(), ema_loss.item()))
+                'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, kl_loss: %f' %
+                (iter_num, loss.item(), seg_loss.item(), ema_loss.item(), kl_loss.item()))
 
             if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]
@@ -205,7 +214,7 @@ def train(args, snapshot_path):
                 metric_i = test_single_volume_for_trainLabel(
                     sampled_batch["image"], sampled_batch["label"], seg_model, 
                     ema_model,classes=args.num_classes, patch_size=args.patch_size,
-                    ablation_mode=args.ablation_option)
+                    args=args)
                 metric_list += np.array(metric_i)
             metric_list = metric_list / len(db_val)
 
@@ -278,7 +287,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     
-    snapshot_path = "../model/{}/{}-{}_{}".format(args.exp, args.seg_model,args.mad_model, args.tag)
+    snapshot_path = "../model/{}/{}-{}_{}".format(args.exp, args.seg_model,args.ema_model, args.tag)
     if get_train_test_mode(args.train_test_mode) == "only_Testing":
         args.clean_before_run = False
     if args.clean_before_run and os.path.exists(snapshot_path):

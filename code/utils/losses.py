@@ -15,6 +15,10 @@ warnings.filterwarnings("ignore")
 def mse_loss(input1, input2):
     return torch.mean((input1 - input2)**2)
 
+def KLloss(mean,std):
+    Mean = mean
+    Std = std
+    return torch.mean(0.5*(torch.sum(torch.pow(Std,2),(1))+torch.sum(torch.pow(Mean,2),(1))-2*torch.sum(torch.log(Std+0.00001),(1))))
 
 class MagicDiceLoss(nn.Module):
     def __init__(self, n_classes):

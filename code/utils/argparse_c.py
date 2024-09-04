@@ -7,22 +7,22 @@ parser.add_argument('--exp', type=str,
                     default='ACDC/MAD_FineTuning', help='experiment_name')
 parser.add_argument('--tag',type=str,
                     default='v99', help='tag of experiment')
-parser.add_argument('--input_channels_mad', type=int,  default=4,
+parser.add_argument('--input_channels_ema', type=int,  default=4,
                     help='Number of input channels about mad network')
-parser.add_argument('--mad_model', type=str,
+parser.add_argument('--ema_model', type=str,
                     default='unet', help='mad_model_name and ema_model name')
 parser.add_argument('--seg_model', type=str,
                     default='unet', help='seg_model name')
 parser.add_argument('--pretrain_path_seg', type=str,
                     default='../data/pretrain/seg_model_unet.pth', help='pretrain seg_model path')
-parser.add_argument('--pretrain_path_mad', type=str,
-                    default='../data/pretrain/mad_model_unet.pth', help='pretrain mad_model path')
+parser.add_argument('--pretrain_path_ema', type=str,
+                    default='../data/pretrain/mad_model_unet.pth', help='pretrain ema_model path')
 parser.add_argument('--train_struct_mode',type=int, default=0,choices=[0,1,2],
                     help='The structure of training.')
-parser.add_argument('--ablation_option',type=int, nargs='+', default=[0],choices=[0,1,2,3,4,5],
+parser.add_argument('--ablation_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5],
                     help='The Ablation experiments')
-parser.add_argument('--update_log_mode',type=int, default=0,
-                    help='The structure of Improvement log')
+parser.add_argument('--vae_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5],
+                    help='The VAE experiments options')
 parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5],
                     help='Image fusion mode.')
 parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_224","pred_unet_256_npy"],
@@ -39,7 +39,9 @@ parser.add_argument('--batch_size', type=int, default=24,
                     help='batch_size per gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
-parser.add_argument('--initial_lr', type=float,  default=3e-4,
+parser.add_argument('--initial_lr', type=float,  default=1e-2,
+                    help='initial segmentation network learning rate')
+parser.add_argument('--kl_loss_factor', type=float,  default=0.0002,
                     help='initial segmentation network learning rate')
 parser.add_argument('--lr_threshold', type=float,  default=1e-6,
                     help='mim learning rate')

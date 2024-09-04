@@ -156,6 +156,15 @@ def get_ablation_option_mode(mode):
                 }
     return ref_dict[str(mode)]
 
+def get_VAE_option_mode(mode):
+    ref_dict = {"0": "step2网络使用unet_2d",
+                "1": "step2网络使用VAE_2d",
+                "2": "dice_loss",
+                "3": "ce_loss",
+                "4": "冻结预训练权重",
+                }
+    return ref_dict[str(mode)]
+
 def improvement_log(struct_mode,log_mode):
     ref_struct1_dict = {
         "0": "原始的设计",

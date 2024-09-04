@@ -240,7 +240,7 @@ class VAE_3D(torch.nn.Module):
 
 class VAE_2D(torch.nn.Module):
     # [16,32,64,128,256,512]
-    def __init__(self, n_channels= 4, n_class =4 , norm_type=2, n_fmaps=[8,16,32,64,128,256],dim=1024,soft=False,linear_dim = 32768):
+    def __init__(self, n_channels= 4, n_class =4 , norm_type=2, n_fmaps=[8,16,32,64,128,256],dim=1024,soft=False,linear_dim = 16384):
         super().__init__()
 
         self.in_block = Conv2d(n_class, n_fmaps[0],norm_type=norm_type,soft=False)
@@ -279,7 +279,7 @@ class VAE_2D(torch.nn.Module):
                 x = self.fc2(x_mean)
         else:
             x = self.fc2(x)
-        x = x.view(x.size(0),128,16,16)
+        x = x.view(x.size(0),256,8,8)
         
         x = self.up1(x)
         if dropout: x = torch.nn.functional.dropout(x, p=dropout, training=True)

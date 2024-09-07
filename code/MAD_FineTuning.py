@@ -148,26 +148,27 @@ def train(args, snapshot_path):
             
             #------------------------loss------------------------------
             loss = 0.0
-            seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
-            seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
-            seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
-            
-            if 1 in args.vae_option:
-                kl_loss = losses.KLloss(output_maen,output_std)
-                loss = loss + args.kl_loss_factor * kl_loss
-            
-            ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
-            ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
+            seg_loss = 0.0
+            vae_loss = 0.0
             ema_loss = 0.0
-            if 2 in args.vae_option:
-                ema_loss = ema_loss + ema_loss_dice
-            if 3 in args.vae_option:
-                ema_loss = ema_loss + ema_loss_ce
             
-            if 1 in args.ablation_option:
+            if 1 not in args.ablation_option:
+                seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
+                seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
+                seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
+                loss = loss + seg_loss
+            
+            if 2 in args.vae_option:
+                kl_loss = losses.KLloss(output_maen,output_std)
+                vea_loss_dice = dice_loss(seg_outputs_soft, torch.argmax(seg_outputs_soft,dim=1,keepdim=True))
+                vae_loss = vea_loss_dice + args.kl_loss_factor * kl_loss
+                loss = loss + vae_loss
+            
+            if 3 in args.vae_option:
+                ema_loss_ce = ce_loss(ema_outputs, label_batch[:].long())
+                ema_loss_dice = dice_loss(ema_outputs_soft, label_batch.unsqueeze(1))
+                ema_loss = 0.5*(ema_loss_ce + ema_loss_dice)
                 loss = loss + ema_loss
-            else:
-                loss = ema_loss + loss + seg_loss
             
             optimizer_seg.zero_grad()
             optimizer_ema.zero_grad()
@@ -179,11 +180,14 @@ def train(args, snapshot_path):
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
-            writer.add_scalar('info/kl_loss', kl_loss, iter_num)
+            writer.add_scalar('info/vae_loss', vae_loss, iter_num)
 
+            # logging.info(
+            #     'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, vae_loss: %f' %
+            #     (iter_num, loss.item(), seg_loss.item(), ema_loss.item(), vae_loss.item()))
             logging.info(
-                'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, kl_loss: %f' %
-                (iter_num, loss.item(), seg_loss.item(), ema_loss.item(), kl_loss.item()))
+                'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, vae_loss: %f' %
+                (iter_num, loss, seg_loss, ema_loss, vae_loss))
 
             if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]

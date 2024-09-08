@@ -99,19 +99,25 @@ def train(args, snapshot_path):
     if 5 in args.ablation_option:
         for param in seg_model.parameters():
             param.requires_grad = False
+            
+    optimizer_seg = torch.optim.SGD(seg_model.parameters(),
+                                    lr=args.initial_lr,weight_decay = args.weight_decay,momentum=0.9)
+            
+    optimizer_ema = torch.optim.SGD(ema_model.parameters(),
+                                    lr=args.initial_lr,weight_decay = args.weight_decay,momentum=0.9)
     
-    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
-    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
-    optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
-    lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
+    # optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+    #                                       amsgrad=True)
+    # lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
+    #                                                     patience=args.lr_scheduler_patience,
+    #                                                     verbose=True, threshold=args.lr_scheduler_eps,
+    #                                                     threshold_mode="abs")
+    # optimizer_ema = torch.optim.Adam(ema_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
+    #                                       amsgrad=True)
+    # lr_scheduler_ema = lr_scheduler.ReduceLROnPlateau(optimizer_ema, mode='min', factor=args.lr_scheduler_factor,
+    #                                                     patience=args.lr_scheduler_patience,
+    #                                                     verbose=True, threshold=args.lr_scheduler_eps,
+    #                                                     threshold_mode="abs")
     seg_model.train()
     ema_model.train()
         
@@ -178,7 +184,16 @@ def train(args, snapshot_path):
             loss.backward()
             optimizer_seg.step()
             optimizer_ema.step()
-            train_losses_epoch.append(loss.cpu().item())
+            
+            lr_ = args.initial_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
+            for param_group_seg in optimizer_seg.param_groups:
+                param_group_seg['lr'] = lr_
+            for param_group_ema in optimizer_ema.param_groups:
+                param_group_ema['lr'] = lr_
+
+            iter_num = iter_num + 1
+            writer.add_scalar('info/lr', lr_, iter_num)
+            #train_losses_epoch.append(loss.cpu().item())
 
             writer.add_scalar('info/total_loss', loss, iter_num)
             writer.add_scalar('info/seg_loss', seg_loss, iter_num)
@@ -265,11 +280,11 @@ def train(args, snapshot_path):
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
         
-        args.all_tr_losses.append(np.mean(train_losses_epoch))
-        update_train_loss_MA(args)
-        lr_scheduler_seg.step(args.train_loss_MA)
-        lr_scheduler_ema.step(args.train_loss_MA)
-        writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
+        # args.all_tr_losses.append(np.mean(train_losses_epoch))
+        # update_train_loss_MA(args)
+        # lr_scheduler_seg.step(args.train_loss_MA)
+        # lr_scheduler_ema.step(args.train_loss_MA)
+        # writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()

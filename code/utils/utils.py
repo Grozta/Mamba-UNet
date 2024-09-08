@@ -161,6 +161,7 @@ def get_VAE_option_mode(mode):
                 "1": "step2网络使用VAE_2d",
                 "2": "vae的输入和输出求kl+dc_loss",
                 "3": "输出pred和GT求损失",
+                "4": "VAE的输入是masked_label",
                 }
     return ref_dict[str(mode)]
 

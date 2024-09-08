@@ -141,7 +141,10 @@ def train(args, snapshot_path):
                 seg_outputs_soft_blend = seg_outputs_soft
             
             if 1 in args.vae_option:
-                ema_outputs, output_maen,output_std = ema_model(seg_outputs_soft_blend,if_random=True,scale=0.35)
+                if 4 in args.vae_option:
+                    ema_outputs, output_maen,output_std = ema_model(mask_label_batch,if_random=True,scale=0.35)
+                else:
+                    ema_outputs, output_maen,output_std = ema_model(seg_outputs_soft_blend,if_random=True,scale=0.35)
             else:
                 ema_outputs = ema_model(seg_outputs_soft_blend)
             ema_outputs_soft = torch.softmax(ema_outputs, dim=1)
@@ -200,6 +203,10 @@ def train(args, snapshot_path):
                 seg_outputs = torch.argmax(seg_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/segPrediction',
                                  label2color(seg_outputs), iter_num,dataformats='HWC')
+                
+                mask_label = torch.argmax(mask_label_batch, dim=1).cpu().numpy()[0, ...]
+                writer.add_image('train/mask_label',
+                                 label2color(mask_label), iter_num,dataformats='HWC')
                 
                 ema_outputs = torch.argmax(ema_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emaPrediction',

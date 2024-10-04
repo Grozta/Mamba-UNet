@@ -200,9 +200,6 @@ def train(args, snapshot_path):
             writer.add_scalar('info/ema_loss', ema_loss, iter_num)
             writer.add_scalar('info/vae_loss', vae_loss, iter_num)
 
-            # logging.info(
-            #     'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, vae_loss: %f' %
-            #     (iter_num, loss.item(), seg_loss.item(), ema_loss.item(), vae_loss.item()))
             logging.info(
                 'iteration %d : loss : %f, seg_loss: %f, ema_loss: %f, vae_loss: %f' %
                 (iter_num, loss, seg_loss, ema_loss, vae_loss))
@@ -229,7 +226,6 @@ def train(args, snapshot_path):
 
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "ema_state_dict":ema_model.state_dict()}    
-            iter_num = iter_num + 1
             
         epoch_num = epoch_num + 1           
         if epoch_num % 1 == 0:

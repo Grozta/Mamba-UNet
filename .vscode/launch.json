@@ -331,7 +331,7 @@
             "cwd": "${workspaceFolder}/code",
             "justMyCode": false,
             "args": [
-                "--root_path", "/media/icml/H4T/DATASET/ACDC",
+                "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--exp", "ACDC/VAE_FineTuning",
                 "--batch_size","12",
                 "--patch_size","256",

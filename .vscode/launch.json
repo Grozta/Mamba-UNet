@@ -389,6 +389,36 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
             }
+        },
+        {
+            "name": "ACDC_MCVAE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/code/MCVAE_train.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/code",
+            "justMyCode": false,
+            "args": [
+                "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
+                "--exp", "ACDC/MCVAE_train",
+                "--batch_size","12",
+                "--patch_size","256",
+                "--input_channels_ema","4",
+                "--seg_model","mcvae",
+                "--ema_model","emeunet",
+                "--pretrain_path_seg","../data/pretrain/xx.pth",
+                "--pretrain_path_ema","../model/ACDC/MAD_Pretrain/xx.pth",
+                "--train_struct_mode","2",
+                "--ablation_option","6",
+                "--vae_option","5",
+                "--kl_loss_factor","0.00002",
+                "--test_iterations","660",
+                "--train_test_mode","1",
+                "--clean_before_run"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
         }
     ]
 }

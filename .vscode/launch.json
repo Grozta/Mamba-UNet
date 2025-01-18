@@ -401,7 +401,7 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--exp", "ACDC/MCVAE_train",
-                "--batch_size","12",
+                "--batch_size","6",
                 "--patch_size","256",
                 "--input_channels_ema","4",
                 "--seg_model","mcvae",

@@ -27,6 +27,7 @@ from utils import losses
 from utils.utils import label2color, get_model_struct_mode, extract_iter_number, get_pth_files\
     ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode,get_VAE_option_mode
 from val_2D import test_single_volume_for_trainLabel
+from networks.Probabilistic_Unet.utils import l2_regularisation
 from utils.argparse_c import parser
 
 def test_fine_tune(args, snapshot_path):
@@ -100,14 +101,12 @@ def train(args, snapshot_path):
         for param in seg_model.parameters():
             param.requires_grad = False
             
-    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
+    optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay)
     lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
                                                         verbose=True, threshold=args.lr_scheduler_eps,
                                                         threshold_mode="abs")
-    optimizer_eme = torch.optim.Adam(eme_model.parameters(), args.initial_lr, weight_decay=args.weight_decay,
-                                          amsgrad=True)
+    optimizer_eme = torch.optim.Adam(eme_model.parameters(), args.initial_lr_eme, weight_decay=args.weight_decay)
     lr_scheduler_eme = lr_scheduler.ReduceLROnPlateau(optimizer_eme, mode='min', factor=args.lr_scheduler_factor,
                                                         patience=args.lr_scheduler_patience,
                                                         verbose=True, threshold=args.lr_scheduler_eps,
@@ -128,50 +127,28 @@ def train(args, snapshot_path):
     for epoch_num in iterator:
         train_losses_epoch = []
         for i_batch, sampled_batch in enumerate(trainloader):
-
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
-                       
-            seg_outputs = seg_model(volume_batch)
-            seg_outputs_soft = torch.softmax(seg_outputs, dim=1)
+            seg_label_batch = torch.unsqueeze(label_batch,1)
             
-            if 3 not in args.ablation_option:
-                seg_outputs_soft_blend = torch.concat([volume_batch,seg_outputs_soft],dim=1)
-            else:
-                seg_outputs_soft_blend = seg_outputs_soft
-            
-            if 1 in args.vae_option:
-                if 4 in args.vae_option:
-                    eme_outputs, output_maen,output_std = eme_model(mask_label_batch,if_random=True,scale=0.35)
-                else:
-                    eme_outputs, output_maen,output_std = eme_model(seg_outputs_soft_blend,if_random=True,scale=0.35)
-            else:
-                eme_outputs = eme_model(seg_outputs_soft_blend)
+            seg_model.forward(volume_batch, seg_label_batch, training=True) 
+            elbo_loss = seg_model.elbo(seg_label_batch)
+
+            # seg的输出和label输入到修正网络
+            eme_outputs = eme_model(seg_model.reconstruction, label_batch)
             eme_outputs_soft = torch.softmax(eme_outputs, dim=1)
-            
             #------------------------loss------------------------------
             loss = 0.0
-            seg_loss = 0.0
-            vae_loss = 0.0
-            eme_loss = 0.0
             
-            if 1 not in args.ablation_option:
-                seg_loss_ce = ce_loss(seg_outputs, label_batch[:].long())
-                seg_loss_dice = dice_loss(seg_outputs_soft, label_batch.unsqueeze(1))
-                seg_loss = 0.5 * (seg_loss_dice + seg_loss_ce)
-                loss = loss + seg_loss
+            vae_reg_loss = l2_regularisation(seg_model.posterior) + l2_regularisation(seg_model.prior) + l2_regularisation(seg_model.fcomb.layers)
+            seg_loss = -elbo_loss + args.vae_reg_loss_weight * vae_reg_loss
             
-            if 2 in args.vae_option:
-                kl_loss = losses.KLloss(output_maen,output_std)
-                vea_loss_dice = dice_loss(seg_outputs_soft, torch.argmax(seg_outputs_soft,dim=1,keepdim=True))
-                vae_loss = vea_loss_dice + args.kl_loss_factor * kl_loss
-                loss = loss + vae_loss
+            eme_loss_ce = ce_loss(eme_outputs, label_batch[:].long())
+            eme_loss_dice = dice_loss(eme_outputs_soft, label_batch.unsqueeze(1))
+            eme_loss = 0.5*(eme_loss_ce + eme_loss_dice)
             
-            if 3 in args.vae_option:
-                eme_loss_ce = ce_loss(eme_outputs, label_batch[:].long())
-                eme_loss_dice = dice_loss(eme_outputs_soft, label_batch.unsqueeze(1))
-                eme_loss = 0.5*(eme_loss_ce + eme_loss_dice)
-                loss = loss + eme_loss
+            loss = seg_loss + eme_loss
+            #------------------------loss------------------------------
             
             optimizer_seg.zero_grad()
             optimizer_eme.zero_grad()
@@ -220,7 +197,9 @@ def train(args, snapshot_path):
 
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "eme_state_dict":eme_model.state_dict()}    
-            
+        lr_scheduler_seg.step()
+        lr_scheduler_eme.step()
+        
         epoch_num = epoch_num + 1           
         if epoch_num % 1 == 0:
             seg_model.eval()

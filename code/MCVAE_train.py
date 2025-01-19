@@ -23,6 +23,7 @@ from config import get_config
 from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGeneratorv_4_finetune, resize_data_list
 from networks.net_factory import net_factory
 from networks.unet import kaiming_initialize_weights
+from networks.utils import gen_eme_hot_mask
 from utils import losses
 from utils.utils import label2color, get_model_struct_mode, extract_iter_number, get_pth_files\
     ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode,get_VAE_option_mode
@@ -126,7 +127,7 @@ def train(args, snapshot_path):
     iterator = tqdm(range(max_epoch), ncols=70)
     for epoch_num in iterator:
         train_losses_epoch = []
-        for i_batch, sampled_batch in enumerate(trainloader):
+        for step_num, sampled_batch in enumerate(trainloader):
             volume_batch, label_batch, mask_label_batch = sampled_batch['image'], sampled_batch['label'],sampled_batch['mask_label']
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
             seg_label_batch = torch.unsqueeze(label_batch,1)
@@ -135,7 +136,8 @@ def train(args, snapshot_path):
             elbo_loss = seg_model.elbo(seg_label_batch)
 
             # seg的输出和label输入到修正网络
-            eme_outputs = eme_model(seg_model.reconstruction, label_batch)
+            eme_hot_mask = gen_eme_hot_mask(seg_model.reconstruction, label_batch)
+            eme_outputs,eme_hot_mask = eme_model(seg_model.reconstruction, eme_hot_mask)
             eme_outputs_soft = torch.softmax(eme_outputs, dim=1)
             #------------------------loss------------------------------
             loss = 0.0
@@ -155,25 +157,23 @@ def train(args, snapshot_path):
             loss.backward()
             optimizer_seg.step()
             optimizer_eme.step()
-            
-            lr_ = args.initial_lr * (1.0 - iter_num / args.max_iterations) ** 0.9
-            for param_group_seg in optimizer_seg.param_groups:
-                param_group_seg['lr'] = lr_
-            for param_group_eme in optimizer_eme.param_groups:
-                param_group_eme['lr'] = lr_
-
+                    
             iter_num = iter_num + 1
-            writer.add_scalar('info/lr', lr_, iter_num)
-            #train_losses_epoch.append(loss.cpu().item())
-
-            writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/seg_loss', seg_loss, iter_num)
-            writer.add_scalar('info/eme_loss', eme_loss, iter_num)
-            writer.add_scalar('info/vae_loss', vae_loss, iter_num)
-
-            logging.info(
-                'iteration %d : loss : %f, seg_loss: %f, eme_loss: %f, vae_loss: %f' %
-                (iter_num, loss, seg_loss, eme_loss, vae_loss))
+            #------------------------Recording observer data------------------------------
+            #获取optimizer_seg和optimizer_eme的学习率
+            seg_lr = optimizer_seg.param_groups[0]['lr']
+            eme_lr = optimizer_eme.param_groups[0]['lr']
+            writer.add_scalars('info/lr', {"seg_lr":seg_lr, "eme_lr":eme_lr}, iter_num)
+            
+            if iter_num%50==0:
+                logging.info(
+                'iteration %d : loss : %f\n -elbo_loss: %f, vae_reg_loss: %f,seg_loss:%f,\n eme_loss: %f' %
+                (iter_num,loss, -elbo_loss, vae_reg_loss,seg_loss, eme_loss))
+                writer.add_scalars('info/loss', {'total_loss':loss,
+                                                       '-elbo_loss':-elbo_loss,
+                                                       'vae_reg_loss':vae_reg_loss,
+                                                       'seg_loss':seg_loss,
+                                                       'eme_loss':eme_loss}, iter_num)
 
             if iter_num % 200 == 0:
                 image = sampled_batch['image'][0, 0, ...]
@@ -183,25 +183,20 @@ def train(args, snapshot_path):
                 writer.add_image('train/GroundTruth', 
                                  label2color(labs), iter_num,dataformats='HWC')
                 
-                seg_outputs = torch.argmax(seg_outputs_soft, dim=1).cpu().numpy()[0, ...]
+                seg_outputs = torch.argmax(torch.softmax(seg_model.reconstruction.cpu()), dim=1).numpy()[0, ...]
                 writer.add_image('train/segPrediction',
                                  label2color(seg_outputs), iter_num,dataformats='HWC')
-                
-                mask_label = torch.argmax(mask_label_batch, dim=1).cpu().numpy()[0, ...]
-                writer.add_image('train/mask_label',
-                                 label2color(mask_label), iter_num,dataformats='HWC')
                 
                 eme_outputs = torch.argmax(eme_outputs_soft, dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emePrediction',
                                  label2color(eme_outputs), iter_num,dataformats='HWC')
-
+            #------------------------Recording observer data------------------------------
             model_state = {"seg_state_dict":seg_model.state_dict(),
                            "eme_state_dict":eme_model.state_dict()}    
         lr_scheduler_seg.step()
         lr_scheduler_eme.step()
-        
-        epoch_num = epoch_num + 1           
-        if epoch_num % 1 == 0:
+               
+        if epoch_num % 15 == 0:
             seg_model.eval()
             eme_model.eval()
             metric_list = 0.0 # 3x2
@@ -248,12 +243,6 @@ def train(args, snapshot_path):
                 snapshot_path, 'iter_' + str(iter_num) + '.pth')
             torch.save(model_state, save_mode_path)
             logging.info("save model to {}".format(save_mode_path))
-        
-        # args.all_tr_losses.append(np.mean(train_losses_epoch))
-        # update_train_loss_MA(args)
-        # lr_scheduler_seg.step(args.train_loss_MA)
-        # lr_scheduler_eme.step(args.train_loss_MA)
-        # writer.add_scalar('info/lr', optimizer_seg.state_dict()['param_groups'][0]['lr'], epoch_num)
         
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()

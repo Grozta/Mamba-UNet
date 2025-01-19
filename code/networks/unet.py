@@ -91,6 +91,25 @@ class UpBlock(nn.Module):
         x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
 
+class MaskedGlobalAveragePooling(nn.Module):
+    def __init__(self,key):
+        super(MaskedGlobalAveragePooling, self).__init__(self)
+        self.key = key
+
+    def forward(self, x, mask):
+        #将mask扩展为与x相同的维度，例如x的形状为bx4x224x224，mask的形状为bx4x224x224
+        mask = mask.unsqueeze(1).expand(-1, x.shape[1], -1, -1)
+        # x的输入形状为bx4x224x224或者bx8x112x112,而mask的形状为bx224x224
+        if x.shape[-2:] != mask.shape[-2:]:
+            # mask和x的后两个维度相同 ，使用邻近差值
+            mask = nn.functional.interpolate(mask, size=x.shape[-2:], mode='nearest').float()
+        masked_x = x * mask + self.key
+        sum_masked_x = torch.sum(masked_x, dim=(-2, -1))
+        num_masked_elements = torch.sum(mask, dim=(-2, -1))
+        num_masked_elements = torch.clamp(num_masked_elements, min=self.key)
+        # 计算平均池化结果
+        pooled_x = sum_masked_x / num_masked_elements
+        return pooled_x
 
 class Encoder(nn.Module):
     def __init__(self, params):
@@ -121,6 +140,41 @@ class Encoder(nn.Module):
         x4 = self.down4(x3)
         return [x0, x1, x2, x3, x4]
 
+
+class EneEncoder(nn.Module):
+    def __init__(self, params):
+        super(Encoder, self).__init__()
+        self.params = params
+        self.in_chns = self.params['in_chns']
+        self.ft_chns = self.params['feature_chns']
+        self.n_class = self.params['class_num']
+        self.bilinear = self.params['bilinear']
+        self.dropout = self.params['dropout']
+        assert (len(self.ft_chns) == 5)
+        self.in_conv = ConvBlock(
+            self.in_chns, self.ft_chns[0], self.dropout[0])
+        self.down1 = DownBlock(
+            self.ft_chns[0], self.ft_chns[1], self.dropout[1])
+        self.down2 = DownBlock(
+            self.ft_chns[1], self.ft_chns[2], self.dropout[2])
+        self.down3 = DownBlock(
+            self.ft_chns[2], self.ft_chns[3], self.dropout[3])
+        self.down4 = DownBlock(
+            self.ft_chns[3], self.ft_chns[4], self.dropout[4])
+        self.map1 = MaskedGlobalAveragePooling(1e-6)
+        self.map2 = MaskedGlobalAveragePooling(1e-6)
+
+    def forward(self, x, eme_hot_mask):
+        x0 = self.in_conv(x)
+        class_p = self.map1(x, eme_hot_mask)
+        x0 = x0 * class_p.unsqueeze(-1).unsqueeze(-1)
+        x1 = self.down1(x0)
+        class_p = self.map2(x1, eme_hot_mask)
+        x1 = x1 * class_p.unsqueeze(-1).unsqueeze(-1)
+        x2 = self.down2(x1)
+        x3 = self.down3(x2)
+        x4 = self.down4(x3)
+        return [x0, x1, x2, x3, x4]
 
 class Decoder(nn.Module):
     def __init__(self, params):
@@ -338,31 +392,19 @@ class EME_UNet(nn.Module):
                   'bilinear': False,
                   'acti_func': 'relu'}
 
-        self.encoder = Encoder(params)
+        self.encoder = EneEncoder(params)
         self.decoder = Decoder(params)
-    def gen_eme_hot_map(self, reconstruction, label):
-        """
-        生成热图
-        :param reconstruction: 重建图像,这里是网络的特征输出 bx4x224x224
-        :param label: 标签,内部是包含0,1,2,3值的标签bx224x224,类别数=self.params['class_num']= 4
-        :return:二值图像, 表明label和reconstruction的差异
-        """
-        # 将reconstruction变量和计算图分离，得到一个新的变量rec_label
-        rec_label = reconstruction.detach()
-        # 然后rec_label通过softmax转为标签
-        rec_label = torch.softmax(rec_label, dim=1)
-        rec_label = torch.argmax(rec_label, dim=1)
-        # 接着将rec_label和label生成差异二值图像，也就是差异热力图
-        hot_map = torch.abs(rec_label - label)
-        hot_map = (hot_map > 0).float()
-        return hot_map
+    
 
-    def forward(self, x, label=None):
-        if label != None:
-            hot_map = self.gen_eme_hot_map(x, reconstruction, label)
-        feature = self.encoder(x)
+    def forward(self, x, eme_hot_mask=None):
+        """
+        Args:
+            x (_type_): bxcx224x224
+            eme_hot_map (_type_, optional): bx224x224. Defaults to None.
+        """
+        feature = self.encoder(x,eme_hot_mask)
         reconstruction = self.decoder(feature)
-        return reconstruction, hot_map
+        return reconstruction, eme_hot_mask
     
     
 class TLUNet(nn.Module):

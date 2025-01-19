@@ -155,6 +155,22 @@ class FCNConv3(nn.Module):
         outputs = self.conv3(outputs)
         return outputs
 
+def gen_eme_hot_mask(reconstruction, label):
+        """
+        生成热图
+        :param reconstruction: 重建图像,这里是网络的特征输出 bx4x224x224
+        :param label: 标签,内部是包含0,1,2,3值的标签bx224x224,类别数=self.params['class_num']= 4
+        :return:二值图像, 表明label和reconstruction的差异
+        """
+        # 将reconstruction变量和计算图分离，得到一个新的变量rec_label
+        rec_label = reconstruction.detach()
+        # 然后rec_label通过softmax转为标签
+        rec_label = torch.softmax(rec_label, dim=1)
+        rec_label = torch.argmax(rec_label, dim=1)
+        # 接着将rec_label和label生成差异二值图像，也就是差异热力图
+        hot_map = torch.abs(rec_label - label)
+        hot_map = (hot_map > 0).float()
+        return hot_map
 
 class UnetGatingSignal3(nn.Module):
     def __init__(self, in_size, out_size, is_batchnorm):

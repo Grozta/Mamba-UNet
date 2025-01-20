@@ -1,4 +1,4 @@
-from unet_blocks import *
+from networks.Probabilistic_Unet.unet_blocks import *
 import torch.nn.functional as F
 
 class Unet(nn.Module):

@@ -40,11 +40,9 @@ def net_factory(config,args,net_type="unet", in_chns=1, class_num=4, vnet_n_filt
         net = ViM_seg(config, img_size=args.patch_size,
                       num_classes=args.num_classes).cuda()
     elif net_type == "mcvae":
-        net = ProbabilisticUnet(config, img_size=args.patch_size,
-                      num_classes=args.num_classes).cuda()
+        net = ProbabilisticUnet(input_channels=1,num_classes=class_num).cuda()
     elif net_type == "emeunet":
-        net = EME_UNet(config, img_size=args.patch_size,
-                      num_classes=args.num_classes).cuda()
+        net = EME_UNet(in_chns=in_chns,class_num=class_num).cuda()
     elif net_type == "pnet":
         net = PNet2D(in_chns, class_num, 64, [1, 2, 4, 8, 16]).cuda()
     elif net_type == "nnUNet":

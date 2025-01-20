@@ -24,10 +24,10 @@ from dataloaders.dataset import BaseDataSets4TrainLabel,BaseDataSets,RandomGener
 from networks.net_factory import net_factory
 from networks.unet import kaiming_initialize_weights
 from networks.utils import gen_eme_hot_mask
-from utils import losses
+from utils.losses import weighted_cross_entropy_loss_with_mask,weighted_dice_loss_with_mask
 from utils.utils import label2color, get_model_struct_mode, extract_iter_number, get_pth_files\
     ,get_train_test_mode,worker_init_fn,improvement_log,update_train_loss_MA,get_ablation_option_mode,get_VAE_option_mode
-from val_2D import test_single_volume_for_trainLabel
+from val_2D import test_single_volume_for_VAE
 from networks.Probabilistic_Unet.utils import l2_regularisation
 from utils.argparse_c import parser
 
@@ -52,7 +52,7 @@ def test_fine_tune(args, snapshot_path):
         
         metric_list = 0.0 # 3x2
         for i_batch, sampled_batch in enumerate(testloader):
-            metric_i = test_single_volume_for_trainLabel(
+            metric_i = test_single_volume_for_VAE(
                 sampled_batch["image"], sampled_batch["label"], seg_model, eme_model,classes=args.num_classes, patch_size=args.patch_size,args=args)
             metric_list += np.array(metric_i)
         metric_list = metric_list / len(db_test)
@@ -91,37 +91,34 @@ def train(args, snapshot_path):
     if 4 in args.ablation_option:
         seg_model.apply(kaiming_initialize_weights)
     else:
-        seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
-        seg_model.load_state_dict(seg_model_pretrained_dict)
+        #检查args.pretrain_path_seg路径中文件是否存在
+        if os.path.exists(args.pretrain_path_seg):
+            seg_model_pretrained_dict = torch.load(args.pretrain_path_seg)
+            seg_model.load_state_dict(seg_model_pretrained_dict)
     if 2 in args.ablation_option:
         eme_model.apply(kaiming_initialize_weights)
     else:
-        eme_model_pretrained_dict = torch.load(args.pretrain_path_ema)
-        eme_model.load_state_dict(eme_model_pretrained_dict)
+        if os.path.exists(args.pretrain_path_seg):
+            eme_model_pretrained_dict = torch.load(args.pretrain_path_ema)
+            eme_model.load_state_dict(eme_model_pretrained_dict)
     if 5 in args.ablation_option:
         for param in seg_model.parameters():
             param.requires_grad = False
             
     optimizer_seg = torch.optim.Adam(seg_model.parameters(), args.initial_lr, weight_decay=args.weight_decay)
-    lr_scheduler_seg = lr_scheduler.ReduceLROnPlateau(optimizer_seg, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
+    lr_scheduler_seg = lr_scheduler.StepLR(optimizer_seg, step_size=5,gamma=0.95)
     optimizer_eme = torch.optim.Adam(eme_model.parameters(), args.initial_lr_eme, weight_decay=args.weight_decay)
-    lr_scheduler_eme = lr_scheduler.ReduceLROnPlateau(optimizer_eme, mode='min', factor=args.lr_scheduler_factor,
-                                                        patience=args.lr_scheduler_patience,
-                                                        verbose=True, threshold=args.lr_scheduler_eps,
-                                                        threshold_mode="abs")
+    lr_scheduler_eme = lr_scheduler.StepLR(optimizer_eme, step_size=5,gamma=0.95)
+    
     seg_model.train()
     eme_model.train()
-        
-    ce_loss = CrossEntropyLoss()
-    dice_loss = losses.DiceLoss(args.num_classes)
+    ce_loss = weighted_cross_entropy_loss_with_mask
+    dice_loss = weighted_dice_loss_with_mask
     
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
     iter_num = 0
-    max_epoch = args.max_iterations // len(trainloader) + 1
+    max_epoch = args.max_epochs
     best_performance = 0.0
     args.all_tr_losses = []
     iterator = tqdm(range(max_epoch), ncols=70)
@@ -132,22 +129,21 @@ def train(args, snapshot_path):
             volume_batch, label_batch, mask_label_batch = volume_batch.cuda(), label_batch.cuda(), mask_label_batch.cuda()
             seg_label_batch = torch.unsqueeze(label_batch,1)
             
-            seg_model.forward(volume_batch, seg_label_batch, training=True) 
-            elbo_loss = seg_model.elbo(seg_label_batch)
-
+            seg_model.forward(volume_batch, seg_label_batch, training=True)
+            elbo_loss = seg_model.elbo(label_batch)
+            seg_outputs = seg_model.reconstruction
             # seg的输出和label输入到修正网络
-            eme_hot_mask = gen_eme_hot_mask(seg_model.reconstruction, label_batch)
-            eme_outputs,eme_hot_mask = eme_model(seg_model.reconstruction, eme_hot_mask)
-            eme_outputs_soft = torch.softmax(eme_outputs, dim=1)
+            eme_hot_mask = gen_eme_hot_mask(seg_outputs, label_batch)
+            eme_outputs,eme_hot_mask = eme_model(seg_outputs, eme_hot_mask)
             #------------------------loss------------------------------
             loss = 0.0
             
             vae_reg_loss = l2_regularisation(seg_model.posterior) + l2_regularisation(seg_model.prior) + l2_regularisation(seg_model.fcomb.layers)
-            seg_loss = -elbo_loss + args.vae_reg_loss_weight * vae_reg_loss
+            seg_loss = args.vae_reg_loss_weight * vae_reg_loss +(-elbo_loss * args.vae_elbo_loss_weight)
             
-            eme_loss_ce = ce_loss(eme_outputs, label_batch[:].long())
-            eme_loss_dice = dice_loss(eme_outputs_soft, label_batch.unsqueeze(1))
-            eme_loss = 0.5*(eme_loss_ce + eme_loss_dice)
+            eme_loss_ce = ce_loss(eme_outputs, label_batch[:].long(),eme_hot_mask)
+            eme_loss_dice = dice_loss(eme_outputs, label_batch[:],eme_hot_mask)
+            eme_loss = eme_loss_ce + eme_loss_dice
             
             loss = seg_loss + eme_loss
             #------------------------loss------------------------------
@@ -165,7 +161,7 @@ def train(args, snapshot_path):
             eme_lr = optimizer_eme.param_groups[0]['lr']
             writer.add_scalars('info/lr', {"seg_lr":seg_lr, "eme_lr":eme_lr}, iter_num)
             
-            if iter_num%50==0:
+            if iter_num%5==0:
                 logging.info(
                 'iteration %d : loss : %f\n -elbo_loss: %f, vae_reg_loss: %f,seg_loss:%f,\n eme_loss: %f' %
                 (iter_num,loss, -elbo_loss, vae_reg_loss,seg_loss, eme_loss))
@@ -175,7 +171,7 @@ def train(args, snapshot_path):
                                                        'seg_loss':seg_loss,
                                                        'eme_loss':eme_loss}, iter_num)
 
-            if iter_num % 200 == 0:
+            if iter_num % 20 == 0:
                 image = sampled_batch['image'][0, 0, ...]
                 writer.add_image('train/Image', image, iter_num, dataformats='HW')
                 
@@ -183,11 +179,11 @@ def train(args, snapshot_path):
                 writer.add_image('train/GroundTruth', 
                                  label2color(labs), iter_num,dataformats='HWC')
                 
-                seg_outputs = torch.argmax(torch.softmax(seg_model.reconstruction.cpu()), dim=1).numpy()[0, ...]
+                seg_outputs = torch.argmax(torch.softmax(seg_outputs, dim=1), dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/segPrediction',
                                  label2color(seg_outputs), iter_num,dataformats='HWC')
                 
-                eme_outputs = torch.argmax(eme_outputs_soft, dim=1).cpu().numpy()[0, ...]
+                eme_outputs = torch.argmax(torch.softmax(eme_outputs, dim=1), dim=1).cpu().numpy()[0, ...]
                 writer.add_image('train/emePrediction',
                                  label2color(eme_outputs), iter_num,dataformats='HWC')
             #------------------------Recording observer data------------------------------
@@ -196,12 +192,12 @@ def train(args, snapshot_path):
         lr_scheduler_seg.step()
         lr_scheduler_eme.step()
                
-        if epoch_num % 15 == 0:
+        if epoch_num % 1 == 0:
             seg_model.eval()
             eme_model.eval()
             metric_list = 0.0 # 3x2
             for i_batch, sampled_batch in enumerate(valloader):
-                metric_i = test_single_volume_for_trainLabel(
+                metric_i = test_single_volume_for_VAE(
                     sampled_batch["image"], sampled_batch["label"], seg_model, 
                     eme_model,classes=args.num_classes, patch_size=args.patch_size,
                     args=args)
@@ -224,7 +220,7 @@ def train(args, snapshot_path):
                 best_performance = performance[0]
                 writer.add_text(f'val/best_performance',f"{iter_num}_best_performance:"+str(performance),iter_num)
                 save_best = os.path.join(snapshot_path,
-                                            'TrainLabel{}_best_model.pth'.format(args.train_struct_mode))
+                                            'TrainVAE{}_best_model.pth'.format(args.train_struct_mode))
                 torch.save(model_state, save_best)
                 logging.info("save_best_model to {}".format(save_best))
                 
@@ -247,9 +243,6 @@ def train(args, snapshot_path):
         if args.tag == 'v99' and iter_num >=args.test_iterations:
             iterator.close()
             return "Testing Finished!"
-        if iter_num >= args.max_iterations or optimizer_seg.state_dict()['param_groups'][0]['lr'] <= args.lr_threshold:
-            iterator.close()
-            break
         
     return "Training Finished!"
 

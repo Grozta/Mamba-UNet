@@ -401,7 +401,7 @@
             "args": [
                 "--root_path", "/media/grozta/SOYO/DATASET/ACDC",
                 "--exp", "ACDC/MCVAE_train",
-                "--batch_size","6",
+                "--batch_size","16",
                 "--patch_size","256",
                 "--input_channels_ema","4",
                 "--seg_model","mcvae",
@@ -409,8 +409,8 @@
                 "--pretrain_path_seg","../data/pretrain/xx.pth",
                 "--pretrain_path_ema","../model/ACDC/MAD_Pretrain/xx.pth",
                 "--train_struct_mode","2",
-                "--ablation_option","6",
-                "--vae_option","5",
+                "--ablation_option","0",
+                "--vae_option","0",
                 "--kl_loss_factor","0.00002",
                 "--test_iterations","660",
                 "--train_test_mode","1",
@@ -418,7 +418,7 @@
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
-            }
+            }//python MCVAE_train.py --root_path /media/grozta/SOYO/DATASET/ACDC --exp ACDC/MCVAE_train --batch_size 16 --patch_size 256 --input_channels_ema 4 --seg_model mcvae --ema_model emeunet --train_struct_mode 2 --ablation_option 0 --vae_option 0 --kl_loss_factor 0.00002 --train_test_mode 1 --clean_before_run --pretrain_path_seg ../data/pretrain/xx.pth --pretrain_path_ema ../model/ACDC/MAD_Pretrain/xx.pth
         }
     ]
 }

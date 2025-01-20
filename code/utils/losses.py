@@ -371,6 +371,73 @@ class DiceLoss(nn.Module):
             loss += dice * weight[i]
         return loss / self.n_classes
 
+def weighted_dice_loss_with_mask(input, target, mask=None, smooth=1e-5):
+    """
+    带权重和mask的Dice损失函数，更加关注mask中值为1的位置
+    
+    参数:
+    - input: 模型的预测输出，形状为 (N, C, H, W)，其中 N 是批次大小，C 是类别数，H 和 W 是特征图的高度和宽度。
+    - target: 真实标签，形状为 (N, H, W)，其中每个元素的值在 [0, C-1] 范围内。
+    - mask: 一个二进制掩码，形状为 (N, H, W)，用于指定哪些位置的损失需要计算。如果为 None，则计算所有位置的损失。
+    - smooth: 一个小的常数，用于避免分母为零。
+    
+    返回:
+    - loss: 计算得到的损失值。
+    """
+    if mask is not None:
+        mask = mask.to(input.device)
+    
+    # 将预测输出转换为概率分布
+    input = torch.softmax(input, dim=1)
+    
+    # 计算每个类别的Dice损失
+    loss = 0
+    for c in range(input.shape[1]):
+        input_c = input[:, c, ...]
+        target_c = (target == c).float()
+        if mask is not None:
+            # 为mask中值为1的位置分配更高的权重
+            weight = mask * 2 + 1  # 权重范围为 [1, 3]
+            input_c = input_c * weight
+            target_c = target_c * weight
+        intersection = torch.sum(input_c * target_c)
+        union = torch.sum(input_c) + torch.sum(target_c)
+        dice = (2 * intersection + smooth) / (union + smooth)
+        loss += (1 - dice)
+    
+    return loss / input.shape[1]
+
+
+def weighted_cross_entropy_loss_with_mask(input, target, mask=None, reduction='mean'):
+    """
+    带权重和mask的交叉熵损失函数，更加关注mask中值为1的位置
+    
+    参数:
+    - input: 模型的预测输出，形状为 (N, C, H, W)，其中 N 是批次大小，C 是类别数，H 和 W 是特征图的高度和宽度。
+    - target: 真实标签，形状为 (N, H, W)，其中每个元素的值在 [0, C-1] 范围内。
+    - mask: 一个二进制掩码，形状为 (N, H, W)，用于指定哪些位置的损失需要计算。如果为 None，则计算所有位置的损失。
+    - reduction: 损失的缩减方式，可选 'mean'（默认）、'sum' 或 'none'。
+    
+    返回:
+    - loss: 计算得到的损失值。
+    """
+    if mask is not None:
+        mask = mask.to(input.device)
+    
+    loss = F.cross_entropy(input, target, reduction='none')
+    
+    if mask is not None:
+        # 为mask中值为1的位置分配更高的权重
+        weight = mask * 2 + 1  # 权重范围为 [1, 3]
+        loss = loss * weight
+    
+    if reduction == 'mean':
+        loss = loss.mean()
+    elif reduction == 'sum':
+        loss = loss.sum()
+    
+    return loss
+
 
 def entropy_minmization(p):
     y1 = -1*torch.sum(p*torch.log(p+1e-6), dim=1)

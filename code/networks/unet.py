@@ -92,9 +92,13 @@ class UpBlock(nn.Module):
         return self.conv(x)
 
 class MaskedGlobalAveragePooling(nn.Module):
-    def __init__(self,key):
-        super(MaskedGlobalAveragePooling, self).__init__(self)
+    def __init__(self,in_channels1, in_channels2,key=1e-6):
+        super(MaskedGlobalAveragePooling, self).__init__()
         self.key = key
+        self.conv1x1_x = nn.Conv2d(in_channels1, in_channels2, kernel_size=1)
+        self.conv1x1_m = nn.Conv2d(in_channels1, in_channels2, kernel_size=1)
+        self.relu_x = nn.ReLU(inplace=True)
+        self.relu_m = nn.ReLU(inplace=True)
 
     def forward(self, x, mask):
         #将mask扩展为与x相同的维度，例如x的形状为bx4x224x224，mask的形状为bx4x224x224
@@ -103,6 +107,9 @@ class MaskedGlobalAveragePooling(nn.Module):
         if x.shape[-2:] != mask.shape[-2:]:
             # mask和x的后两个维度相同 ，使用邻近差值
             mask = nn.functional.interpolate(mask, size=x.shape[-2:], mode='nearest').float()
+        x = self.relu_x(self.conv1x1_x(x))
+        mask = self.relu_m(self.conv1x1_m(mask))
+        
         masked_x = x * mask + self.key
         sum_masked_x = torch.sum(masked_x, dim=(-2, -1))
         num_masked_elements = torch.sum(mask, dim=(-2, -1))
@@ -143,7 +150,7 @@ class Encoder(nn.Module):
 
 class EneEncoder(nn.Module):
     def __init__(self, params):
-        super(Encoder, self).__init__()
+        super(EneEncoder, self).__init__()
         self.params = params
         self.in_chns = self.params['in_chns']
         self.ft_chns = self.params['feature_chns']
@@ -161,16 +168,18 @@ class EneEncoder(nn.Module):
             self.ft_chns[2], self.ft_chns[3], self.dropout[3])
         self.down4 = DownBlock(
             self.ft_chns[3], self.ft_chns[4], self.dropout[4])
-        self.map1 = MaskedGlobalAveragePooling(1e-6)
-        self.map2 = MaskedGlobalAveragePooling(1e-6)
+        self.map1 = MaskedGlobalAveragePooling(self.ft_chns[0],self.ft_chns[0])
+        self.map2 = MaskedGlobalAveragePooling(self.ft_chns[1],self.ft_chns[1])
 
     def forward(self, x, eme_hot_mask):
         x0 = self.in_conv(x)
-        class_p = self.map1(x, eme_hot_mask)
-        x0 = x0 * class_p.unsqueeze(-1).unsqueeze(-1)
+        if not eme_hot_mask is None:
+            class_p = self.map1(x0, eme_hot_mask)
+            x0 = x0 * class_p.unsqueeze(-1).unsqueeze(-1)
         x1 = self.down1(x0)
-        class_p = self.map2(x1, eme_hot_mask)
-        x1 = x1 * class_p.unsqueeze(-1).unsqueeze(-1)
+        if not eme_hot_mask is None:
+            class_p = self.map2(x1, eme_hot_mask)
+            x1 = x1 * class_p.unsqueeze(-1).unsqueeze(-1)
         x2 = self.down2(x1)
         x3 = self.down3(x2)
         x4 = self.down4(x3)

@@ -1,8 +1,8 @@
 #This code is based on: https://github.com/SimonKohl/probabilistic_unet
 
-from unet_blocks import *
-from unet import Unet
-from utils import init_weights,init_weights_orthogonal_normal, l2_regularisation
+from networks.Probabilistic_Unet.unet_blocks import *
+from networks.Probabilistic_Unet.unet import Unet
+from networks.Probabilistic_Unet.utils import init_weights,init_weights_orthogonal_normal, l2_regularisation
 import torch.nn.functional as F
 from torch.distributions import Normal, Independent, kl
 
@@ -265,7 +265,7 @@ class ProbabilisticUnet(nn.Module):
         Calculate the evidence lower bound of the log-likelihood of P(Y|X)
         """
 
-        criterion = nn.BCEWithLogitsLoss(size_average = False, reduce=False, reduction=None)
+        criterion = nn.CrossEntropyLoss()
         z_posterior = self.posterior_latent_space.rsample()
         
         self.kl = torch.mean(self.kl_divergence(analytic=analytic_kl, calculate_posterior=False, z_posterior=z_posterior))

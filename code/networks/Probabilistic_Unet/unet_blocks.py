@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
-from utils import init_weights
+from networks.Probabilistic_Unet.utils import init_weights
 
 class DownConvBlock(nn.Module):
     """

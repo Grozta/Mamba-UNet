@@ -19,11 +19,11 @@ parser.add_argument('--pretrain_path_ema', type=str,
                     default='../data/pretrain/mad_model_unet.pth', help='pretrain ema_model path')
 parser.add_argument('--train_struct_mode',type=int, default=0,choices=[0,1,2],
                     help='The structure of training.')
-parser.add_argument('--ablation_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5],
+parser.add_argument('--ablation_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5,9],
                     help='The Ablation experiments')
-parser.add_argument('--vae_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5],
+parser.add_argument('--vae_option',type=int, nargs='+', default=[1,2,3],choices=[0,1,2,3,4,5,9],
                     help='The VAE experiments options')
-parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5],
+parser.add_argument('--image_fusion_mode',type=int, default=0,choices=[0,1,2,3,4,5,9],
                     help='Image fusion mode.')
 parser.add_argument('--sample_pred_source',type=str,choices=["label","pred_vim_224","pred_unet_256_npy"],
                     default='pred_vim_224', help='The field name of the image source from dataset sample') #labeled_num
@@ -32,7 +32,9 @@ parser.add_argument('--num_classes', type=int,  default=4,
 parser.add_argument('--image_noise',type=float,  
                     default=0.001, help='Noise added when converting to binary image')
 parser.add_argument('--max_iterations', type=int,
-                    default=30000, help='maximum epoch number to train')
+                    default=30000, help='maximum iterations number to train')
+parser.add_argument('--max_epochs', type=int,
+                    default=400, help='maximum epoch number to train')
 parser.add_argument('--test_iterations', type=int,
                     default=660, help='maximum epoch number to test')
 parser.add_argument('--batch_size', type=int, default=24,
@@ -57,7 +59,9 @@ parser.add_argument('--lr_scheduler_patience', type=float,  default=10,
                     help='lr_scheduler_patience')
 parser.add_argument('--train_loss_MA_alpha', type=float,  default=0.83,
                     help='train loss Move Avarge alpha value')
-parser.add_argument('--vae_reg_loss_weight', type=float,  default=1e-5,
+parser.add_argument('--vae_elbo_loss_weight', type=float,  default=1,
+                    help='VAE ELBO loss weight')
+parser.add_argument('--vae_reg_loss_weight', type=float,  default=2e-5,
                     help='VAE reconstruction regression loss weight')
 parser.add_argument('--patch_size', type=int,  default=224,
                     help='patch size of network input')

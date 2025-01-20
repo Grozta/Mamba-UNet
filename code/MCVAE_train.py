@@ -161,7 +161,7 @@ def train(args, snapshot_path):
             eme_lr = optimizer_eme.param_groups[0]['lr']
             writer.add_scalars('info/lr', {"seg_lr":seg_lr, "eme_lr":eme_lr}, iter_num)
             
-            if iter_num%5==0:
+            if iter_num% 5==0:
                 logging.info(
                 'iteration %d : loss : %f\n -elbo_loss: %f, vae_reg_loss: %f,seg_loss:%f,\n eme_loss: %f' %
                 (iter_num,loss, -elbo_loss, vae_reg_loss,seg_loss, eme_loss))
@@ -192,7 +192,7 @@ def train(args, snapshot_path):
         lr_scheduler_seg.step()
         lr_scheduler_eme.step()
                
-        if epoch_num % 1 == 0:
+        if epoch_num % 20 == 0:
             seg_model.eval()
             eme_model.eval()
             metric_list = 0.0 # 3x2
